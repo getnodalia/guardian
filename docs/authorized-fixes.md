@@ -27,6 +27,8 @@ untrusted repository code in your Proxmox LXC or use paid runners.
 - /guardian fix — propose a correction for the most relevant current
   Guardian inline review comment
 - /guardian fix 12345 — target one specific current inline review comment ID
+- /guardian fix-all — propose at most three source-file corrections from current
+  verified inline Guardian/CodeRabbit/SonarQube bot comments
 - /guardian resolve-conflicts — propose a 3-way merge in a draft PR
 
 Commands require a repo collaborator with write access. Commands changing
@@ -57,6 +59,42 @@ check_run.requested_action event.
 
 No code tests are executed by Guardian. Repository CI can run the proposed
 draft PR under its own free, ordinary GitHub-hosted workflow policy.
+
+## How bounded multi-file fix-all works
+
+This is **not** an unrestricted autonomous agent. The explicit command and
+Check-run action are subject to the existing maintainer numeric ID allowlist,
+admin/maintain repository permission, signed event validation, and
+`--enable-fixes --confirm-paid --confirm-write` opt-ins. Every request is
+idempotent by repository, PR, commit SHA and operation type.
+
+1. Fetch the open, non-draft, public, same-repository PR at its immutable
+   current head SHA. Reject protected branches, forks and stale requests.
+2. Read the first 100 changed files and review comments. Reject requests
+   that may exceed the bounded list. Select at most **three non-sensitive
+   source files**, tied to current-commit inline bot comments with a verified
+   GitHub author identity and valid changed line. Ignore unrelated or stale
+   comments. SonarQube issue-level summaries without a source anchor are
+   **not** silently converted into code edits.
+3. Reject files containing obvious credentials, oversize inputs, tests,
+   infrastructure, CI, auth secrets and sensitive paths. Treat all comments
+   and code as untrusted data, not instructions.
+4. Make **one** Sonnet API request maximum, using the same local and
+   provider-side **20 USD/month** budget controls. Require structured output
+   and validate every exact replacement against the unchanged source file.
+5. Recheck the PR SHA, create a fresh `guardian/fixall-prN-SHA` branch,
+   write up to three files **only to that branch**, recheck SHA, and open
+   a **draft PR targeting the contributor feature branch**. Never push to
+   `main`, run untrusted code locally, approve or merge automatically.
+6. The draft PR documents changed and unaddressed files. CI runs only
+   through the repository's own ordinary GitHub-hosted validation workflows.
+   A maintainer must review and merge manually after required checks pass.
+
+A failed or uncertain GitHub write does **not** trigger automatic paid retries.
+An orphaned bot branch may remain if the request fails after a partial write;
+inspect it manually before deciding whether to delete it. Complex semantic
+changes, tests, CodeQL findings without current inline anchors and iterative
+CI repair require separate reviewed extensions.
 
 ## How the 3-way merge resolver works
 
@@ -105,9 +143,11 @@ original branch is pushed by Guardian.
 - No model is allowed to approve Guardian-authored commits.
 - Exact duplicates can be auto-closed after --enable-closure; semantic
   duplicates require human confirmation.
-- The fixer proposes **one small, exact correction per command**. Larger
-  changes, unavailable inline findings, unsupported files, private code,
-  conflicts with more than two files and unverifiable merges are refused.
+- `fix` proposes one exact replacement; `fix-all` proposes up to three
+  exact replacements in three files when current bot inline findings exist.
+  Neither is a whole-repository agent or guarantees every scanner finding is
+  corrected. Private code, unknown files, unsupported conflicts and
+  unverifiable changes are refused.
 - A PR from a fork cannot be patched this way, as Guardian never pushes to
   an external contributor's repository.
 - GitHub Check Run buttons appear in the Checks tab, not arbitrary Markdown.
