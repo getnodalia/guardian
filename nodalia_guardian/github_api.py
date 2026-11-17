@@ -101,7 +101,7 @@ class GitHubAPI:
             raise ValueError("PR number must be positive")
         return self._get(f"/repos/{owner}/{name}/pulls/{number}")
 
-    def create_review(self, repo: str, number: int, *, event: str, body: str, commit_id: str) -> dict:
+    def create_review(self, repo: str, number: int, *, event: str, body: str, commit_id: str, comments: list[dict] | None = None) -> dict:
         """Submit a GitHub App review; intentionally does not support merge or pushes."""
         owner, name = validate_repo(repo)
         if not self._token:
@@ -112,7 +112,24 @@ class GitHubAPI:
             raise ValueError("Invalid review message length")
         if not re.fullmatch(r"[a-fA-F0-9]{40}", commit_id):
             raise ValueError("Invalid commit SHA")
-        payload = json.dumps({"event": event, "body": body, "commit_id": commit_id}).encode("utf-8")
+        # Every line comment must already have been verified against the diff
+        # by build_inline_comments. Validate shape again at the HTTP boundary.
+        comments = comments or []
+        if len(comments) > 12:
+            raise ValueError("Too many inline review comments")
+        for comment in comments:
+            if (not isinstance(comment, dict)
+                    or set(comment) != {"path", "line", "side", "body"}
+                    or not isinstance(comment["path"], str) or not comment["path"]
+                    or type(comment["line"]) is not int or comment["line"] < 1
+                    or comment["side"] != "RIGHT"
+                    or not isinstance(comment["body"], str)
+                    or not 1 <= len(comment["body"]) <= 2_500):
+                raise ValueError("Invalid inline review comment")
+        payload = json.dumps({
+            "event": event, "body": body, "commit_id": commit_id,
+            "comments": comments
+        }).encode("utf-8")
         req = urllib.request.Request(
             f"https://api.github.com/repos/{owner}/{name}/pulls/{number}/reviews",
             data=payload, method="POST",

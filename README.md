@@ -17,6 +17,22 @@ Guardian uses **the exact official Nodalia logo chosen by the owner as its GitHu
 not a generated graphic. To set up the app, install only the needed permissions and upload the
 avatar in GitHub, see [GitHub App setup](docs/github-app-setup.md).
 
+## Professional reviews (first phase)
+
+Guardian can now publish a **concise review summary** and separate **inline
+comments on verified added lines** of the PR diff. If a finding has a valid
+one-line safe replacement outside sensitive paths, GitHub displays its native
+**Apply suggestion** control. Unanchored findings remain in the summary;
+comments never invent diff locations.
+
+The automatic worker still uses the existing read-only+review permissions.
+It cannot edit branches, assign labels, process issues or close duplicate PRs.
+Those capabilities require separate staging and GitHub App permission grants.
+
+See [the professional maintenance roadmap](docs/maintenance-automation.md)
+for planned Haiku-assisted triage, labels, slash commands, duplicate handling
+and isolated Sonnet-generated corrections.
+
 See [`AGENTS.md`](AGENTS.md) and [Nodalia Foundation](https://github.com/getnodalia/foundation).
 
 
@@ -69,7 +85,9 @@ private PR metadata to Anthropic until approved by the code owners.
 
 It examines **the PR head commit**, not the synthetic merge commit GitHub may use to run PR CI.
 The first 100 changed files and checks are included; a truncation warning appears where known.
-PR diffs and full CI logs are deliberately not sent to Claude. An adversary can control PR text
+The free `scan` does not send diffs to Claude. Opt-in `review --ai` sends
+bounded **public** changed-line patches (never full CI logs or private source)
+so Claude can identify issues in changed code. An adversary can control PR text
 and check output: Guardian treats these as **untrusted data** and does not execute instructions
 found inside them. Redaction is best-effort, not a guarantee against secret leakage.
 
@@ -98,7 +116,9 @@ pay for interactive Claude Code. Confirm your credits and billing status before 
 - Read-only scan by default; a **separately authenticated GitHub App** can post reviews only
   through an explicit `review --ai --publish` or opt-in worker command.
 - No autonomous code changes, commits, merging, or publishing releases.
-- No scheduled AI workflow; CI runs *only* offline unit tests and compilation checks.
+- The GitHub-hosted `Guardian · Offline tests` workflow runs compilation and
+offline unit tests on PRs and main. It has read-only permissions, uses a SHA-
+pinned first-party checkout action, and never uses Claude credentials.
 - Explicit least-privilege GitHub Actions token and commit-pinned checkout action.
 - Never turn off CI to obtain a green status. Unknown/absent checks are not treated as passed.
 - Do not provide production tokens to untrusted forks or PR-triggered workflows.
