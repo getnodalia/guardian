@@ -34,7 +34,7 @@ def review_pr(repo: str, pr: int, *, ai: bool, publish: bool,
     summary["patches_truncated"] = summary["files_truncated"] or any(
         "patch" not in f or len(f.get("patch") or "") >= 30_000 for f in raw["files"])
     # No private source may be sent to Claude without separate policy approval.
-    if ai and raw["pr"].get("base", {}).get("repo", {}).get("private", False):
+    if ai and raw["pr"].get("base", {}).get("repo", {}).get("private") is not False:
         raise ValueError("Refusing to send private repository patches to Claude")
     body = None
     event = "COMMENT"
