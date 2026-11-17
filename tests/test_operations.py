@@ -60,7 +60,7 @@ class FixTests(unittest.TestCase):
             "state": "open", "draft": False,
             "head": {"sha": SHA, "ref": "feat/new",
                      "repo": {"full_name": REPO}},
-            "base": {"ref": "main"},
+            "base": {"ref": "main", "repo": {"private": False}},
         }
         api._path.return_value = "/repos/getnodalia/agora"
         api._get_list.return_value = [{
@@ -92,7 +92,7 @@ class FixTests(unittest.TestCase):
             "state": "open", "draft": False,
             "head": {"sha": BASE, "ref": "feat/new",
                      "repo": {"full_name": REPO}},
-            "base": {"ref": "main"},
+            "base": {"ref": "main", "repo": {"private": False}},
         }
         with patch("nodalia_guardian.fixer.analyze") as paid:
             with self.assertRaisesRegex(ValueError, "stale"):
@@ -144,7 +144,7 @@ class MergeTests(unittest.TestCase):
             "head": {"sha": SHA, "ref": "feat/new",
                      "repo": {"full_name": REPO}},
             "base": {"sha": BASE, "ref": "main",
-                     "repo": {"full_name": REPO}},
+                     "repo": {"full_name": REPO, "private": False}},
         }
         ancestor_tree = {
             "tree": [{"path": "src/main.py", "sha": "1" * 40,
