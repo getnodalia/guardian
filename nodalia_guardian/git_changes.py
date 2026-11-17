@@ -17,7 +17,7 @@ _LANGUAGE_SUFFIX = (".rs", ".py", ".ts", ".tsx", ".js", ".jsx", ".swift", ".go",
                     ".c", ".h", ".cpp", ".hpp", ".java", ".kt", ".css", ".html", ".sql")
 _PROTECTED_PATH = re.compile(
     r"(?:^|/)(?:\.github|security|secrets?|credentials?|keys?|\.env|Cargo\.lock|"
-    r"package-lock\.json|pnpm-lock\.yaml)(?:[./-]|$)", re.I
+    r"package-lock\.json|pnpm-lock\.yaml)(?:[._/-]|$)", re.I
 )
 
 
