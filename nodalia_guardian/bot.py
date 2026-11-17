@@ -7,6 +7,7 @@ from .anthropic_api import analyze
 from .app_auth import installation_access_token
 from .budget import BudgetLedger, default_db
 from .decisions import REVIEW_SCHEMA, REVIEW_SYSTEM, gate, parse_review, review_markdown
+from .ecosystem_context import build_ecosystem_context, collect_quality_observations
 from .github_api import GitHubAPI, GitHubError, validate_repo
 from .inline import build_inline_comments
 from .review import summarize
@@ -55,7 +56,19 @@ def review_pr(repo: str, pr: int, *, ai: bool, publish: bool,
                 remaining -= len(entry["patch"])
         if summary["patches_truncated"]:
             summary["patches_available"] = False
-        material = {**summary, "patches": patches}
+        # Context is fetched from the PR's immutable base and the current
+        # Foundation commit; no full repository or private source is sent.
+        context = build_ecosystem_context(
+            api, repo, raw["pr"], [f["name"] for f in summary["files"]]
+        )
+        quality = collect_quality_observations(
+            api, repo, pr, {f["name"] for f in summary["files"]}
+        )
+        summary["context_status"] = context["status"]
+        summary["quality_incomplete"] = quality["incomplete"]
+        summary["quality_observation_count"] = len(quality["observations"])
+        material = {**summary, "patches": patches,
+                    "ecosystem_context": context, "quality_observations": quality}
         llm, cost = analyze(material, os.environ.get("ANTHROPIC_API_KEY", ""),
                             "claude-sonnet-5-5", 3000, BudgetLedger(ledger_path or default_db(), monthly_budget),
                             system=REVIEW_SYSTEM, output_schema=REVIEW_SCHEMA)

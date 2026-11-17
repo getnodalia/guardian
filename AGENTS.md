@@ -2,7 +2,7 @@
 
 Nodalia Guardian is a Python 3.11+ GitHub App engineering-review tool. Its default CLI
 scans PRs in read-only mode; opt-in GitHub App reviews can submit formal GitHub review events.
-It is not yet an autonomous code fixer or hosted security service.
+It supports explicitly authorized, bounded draft fix PRs, but is not a code execution or hosted security service.
 Licence: MIT OR Apache-2.0. No graphical UI yet.
 
 # Architecture
@@ -12,7 +12,11 @@ Licence: MIT OR Apache-2.0. No graphical UI yet.
 - `redaction.py`: best-effort masking of common credentials.
 - `anthropic_api.py`: optional Claude Messages API request; no autonomous code execution.
 - `budget.py`: persistent local reservations; Console workspace is the authoritative cap.
-- `bot.py`, `decisions.py`: model review parsing, conservative approval gates and review publishing.
+- `bot.py`, `decisions.py`: review parsing, policy-aware approval gates, and publishing.
+- `ecosystem_context.py`: bounded Foundation / per-app policy retrieval at immutable SHAs,
+  and GitHub-visible CodeRabbit / SonarQube observations. All are untrusted data.
+- `maintenance.py`, `maintenance_worker.py`: authorized issue/PR classification and commands.
+- `fixer.py`, `operations.py`, `merge_resolver.py`: bounded draft fixes and conflict proposals.
 - `app_auth.py`: short-lived GitHub App installation token authentication.
 - `webhooks.py`, `worker.py`: authenticated delivery intake and durable opted-in review queue.
 - `cli.py`: explicit paid publishing and AI opt-in, input validation, output handling.
@@ -52,6 +56,7 @@ No automatic publishing or billing workflows are enabled.
 # Pull requests
 
 - Add a regression test for behavior changes.
-- Check the PR against Foundation's engineering, CI and security standards.
+- Check the PR against Foundation's engineering, CI, NDL and security standards;
+  missing critical policy context must block automated approval.
 - Verify read-only and zero-cost behavior by default.
 - Do not merge unless required CI and human review have passed.
