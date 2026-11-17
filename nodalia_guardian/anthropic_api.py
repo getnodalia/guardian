@@ -27,6 +27,11 @@ def analyze(summary: dict, api_key: str, model: str, max_output_tokens: int, led
     # No diff, secrets, full logs, credentials, or private issue content is transmitted.
     payload = {"model": model, "max_tokens": max_output_tokens, "system": system,
                "messages": [{"role": "user", "content": json.dumps(summary, ensure_ascii=False, separators=(",", ":"))}]}
+    # Sonnet 5.5 thinks adaptively by default. With a short JSON review budget,
+    # that can consume all output tokens before any text is produced.
+    # This no-tools reviewer does not need up-front thinking.
+    if model == "claude-sonnet-5-5":
+        payload["thinking"] = {"type": "between_tools"}
     serialized = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     reservation_id, _ = ledger.reserve(model, len(serialized), max_output_tokens)
     request = urllib.request.Request(
@@ -46,13 +51,41 @@ def analyze(summary: dict, api_key: str, model: str, max_output_tokens: int, led
         raise AnthropicAPIError("Unexpectedly large Claude API response")
     try:
         result = json.loads(data)
+        if not isinstance(result, dict):
+            raise ValueError("Claude response must be an object")
         usage = result["usage"]
         input_tokens = int(usage["input_tokens"])
         output_tokens = int(usage["output_tokens"])
-        output = "\n".join(p.get("text", "") for p in result.get("content", []) if p.get("type") == "text").strip()
-        if not output:
-            raise ValueError("Claude returned no text")
-    except (KeyError, TypeError, ValueError):
-        raise AnthropicAPIError("Claude API response was incomplete; reserved budget remains held") from None
+        if input_tokens < 0 or output_tokens < 0:
+            raise ValueError("Negative token counts")
+    except (KeyError, TypeError, ValueError, AttributeError):
+        # Without trustworthy usage, preserve the reservation for reconciliation.
+        raise AnthropicAPIError("Claude API response has invalid usage; reserved budget remains held") from None
+
+    # Even an empty or truncated response consumes tokens. Account for valid usage
+    # before validating the text, so the ledger does not indefinitely overreserve.
     cost_micro = ledger.settle(reservation_id, model, input_tokens, output_tokens)
+    stop_reason = result.get("stop_reason")
+    if stop_reason != "end_turn":
+        # Report only the recognized stop reason; never print model output.
+        safe_reason = stop_reason if stop_reason in {
+            "max_tokens", "refusal", "pause_turn", "tool_use",
+            "model_context_window_exceeded", "stop_sequence",
+        } else "unknown"
+        raise AnthropicAPIError(
+            f"Claude stopped with {safe_reason}; usage recorded, no review published"
+        )
+
+    blocks = result.get("content")
+    if not isinstance(blocks, list):
+        raise AnthropicAPIError("Claude returned invalid content blocks; usage recorded")
+    output = "\n".join(
+        block.get("text", "")
+        for block in blocks
+        if isinstance(block, dict)
+        and block.get("type") == "text"
+        and isinstance(block.get("text"), str)
+    ).strip()
+    if not output:
+        raise AnthropicAPIError("Claude returned no text content; usage recorded, no review published")
     return output, cost_micro / 1_000_000
