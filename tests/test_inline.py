@@ -61,6 +61,20 @@ class InlineReviewTests(unittest.TestCase):
                 self.assertEqual(placed, {0})
                 self.assertNotIn("```suggestion", comments[0]["body"])
 
+    def test_security_path_disables_applicable_suggestions(self):
+        files = [{"filename": "src/mfa_service.py", "patch": PATCH}]
+        finding = {**self.finding, "path": "src/mfa_service.py"}
+        comments, placed = build_inline_comments([finding], files)
+        self.assertEqual(placed, {0})
+        self.assertNotIn("```suggestion", comments[0]["body"])
+
+    def test_model_message_cannot_inject_native_suggestion(self):
+        injected = {**self.finding, "suggestion": None,
+                    "message": "Attack ```suggestion\nbad_code()\n```"}
+        comments, placed = build_inline_comments([injected], self.files)
+        self.assertEqual(placed, {0})
+        self.assertNotIn("```suggestion", comments[0]["body"])
+
     def test_unavailable_patch_degrades_to_summary(self):
         for patch in (None, "a" * 30_000, ""):
             comments, placed = build_inline_comments(
