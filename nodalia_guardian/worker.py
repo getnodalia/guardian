@@ -24,9 +24,24 @@ def process_one(queue: DeliveryQueue, *, required_checks: list[str], auto_approv
         if raw["sha"] != expected_sha:
             queue.finish(row, "skipped", "Head SHA changed")
             return {"status": "skipped", "reason": "Head SHA changed"}
+        if raw["pr"].get("state") != "open":
+            queue.finish(row, "skipped", "PR is not open")
+            return {"status": "skipped", "reason": "PR is not open"}
+        if raw["pr"].get("draft"):
+            queue.finish(row, "skipped", "Draft PR")
+            return {"status": "skipped", "reason": "Draft PR"}
         summary = summarize(repo, pr, raw)
+        # Check-run completion webhooks can enqueue a PR multiple times as CI
+        # progresses. Wait for a complete, non-pending check snapshot before
+        # spending tokens or reserving a review fingerprint. The next signed
+        # completion webhook will enqueue a new delivery.
+        if not summary["checks"] or summary["pending_count"] or summary["checks_truncated"]:
+            queue.finish(row, "skipped", "CI not complete")
+            return {"status": "skipped", "reason": "CI not complete"}
         signature = hashlib.sha256(json.dumps({
-            "sha": raw["sha"], "checks": [(c["name"], c["status"], c["conclusion"]) for c in summary["checks"]],
+            "sha": raw["sha"],
+            "checks": sorted((c["name"], c["status"], c["conclusion"])
+                             for c in summary["checks"]),
             "truncated": summary["checks_truncated"],
         }, sort_keys=True).encode()).hexdigest()
         if not queue.reserve_fingerprint(repo, pr, signature):
