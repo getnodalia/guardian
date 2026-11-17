@@ -3,4 +3,4 @@
 # and run systemctl daemon-reload && systemctl restart guardian-webhook.service
 [Service]
 ExecStart=
-ExecStart=/opt/guardian/.venv/bin/python -m nodalia_guardian serve --host 192.168.68.100 --port 8787 --allowed-repo-file /etc/guardian/repos.json --db /var/lib/guardian/deliveries.sqlite3
+ExecStart=/opt/guardian/.venv/bin/python -m nodalia_guardian serve --host 192.168.68.100 --port 8787 --allowed-repo-file --db /var/lib/guardian/deliveries.sqlite3
