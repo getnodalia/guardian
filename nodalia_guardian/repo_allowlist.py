@@ -2,6 +2,8 @@
 
 import json
 import os
+import grp
+import stat
 import tempfile
 from pathlib import Path
 
@@ -11,15 +13,33 @@ from .github_api import GitHubAPI
 DEFAULT_REPO_FILE = Path("/etc/guardian/repos.json")
 
 
-def load_repos(path: Path) -> set[str]:
-    if not path.is_file() or path.is_symlink():
-        raise ValueError("Repository allowlist file missing or unsafe")
-    if path.stat().st_size > 100_000:
-        raise ValueError("Repository allowlist file oversized")
+def load_repos() -> set[str]:
+    """Read only the root-controlled allowlist, never a caller-supplied path.
+
+    Open the fixed path with O_NOFOLLOW and check the opened file descriptor,
+    avoiding a race between symlink checks and file reads. The service runs
+    as guardian, which has read-only access via the guardian group.
+    """
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        raise ValueError("Invalid repository allowlist JSON") from None
+        guardian_gid = grp.getgrnam("guardian").gr_gid
+        # This module is deployed on Linux (the Guardian Debian LXC).
+        # Refuse systems where the no-symlink guarantee is unavailable.
+        if not hasattr(os, "O_NOFOLLOW"):
+            raise ValueError("Safe allowlist opening is unsupported")
+        flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+        with os.fdopen(os.open(DEFAULT_REPO_FILE, flags), "rb") as handle:
+            opened = os.fstat(handle.fileno())
+            if (not stat.S_ISREG(opened.st_mode) or opened.st_uid != 0
+                    or opened.st_gid != guardian_gid
+                    or stat.S_IMODE(opened.st_mode) != 0o640
+                    or not 0 < opened.st_size <= 100_000):
+                raise ValueError("Repository allowlist has unsafe ownership or permissions")
+            raw = handle.read(100_001)
+        if len(raw) > 100_000:
+            raise ValueError("Repository allowlist is too large")
+        data = json.loads(raw.decode("utf-8"))
+    except (OSError, LookupError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError("Repository allowlist is missing or unsafe") from exc
     if not isinstance(data, dict) or not isinstance(data.get("repositories"), list):
         raise ValueError("Repository allowlist requires a repositories array")
     repos = data["repositories"]
