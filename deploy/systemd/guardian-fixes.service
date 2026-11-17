@@ -1,0 +1,22 @@
+[Unit]
+Description=Nodalia Guardian - Authorized Sonnet Correction Proposals
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=guardian
+Group=guardian
+WorkingDirectory=/opt/guardian
+Environment=HOME=/var/lib/guardian
+EnvironmentFile=/etc/guardian/guardian.env
+EnvironmentFile=/etc/guardian/claude.env
+EnvironmentFile=/etc/guardian/maintenance.env
+ExecStart=/opt/guardian/.venv/bin/python -m nodalia_guardian fix-worker --db /var/lib/guardian/deliveries.sqlite3 --enable-fixes --enable-conflicts --confirm-paid --confirm-write --monthly-budget 20
+TimeoutStartSec=360
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/guardian

@@ -68,7 +68,7 @@ class BudgetLedger:
             yield db
 
     def reserve(self, model: str, payload_chars: int, max_output_tokens: int) -> tuple[int, int]:
-        if payload_chars < 0 or not 1 <= max_output_tokens <= 4096:
+        if payload_chars < 0 or not 1 <= max_output_tokens <= 8192:
             raise ValueError("Invalid input size or output limit")
         # This is deliberately conservative, but not a provider-authoritative bound.
         worst_input_tokens = payload_chars // 2 + 1000

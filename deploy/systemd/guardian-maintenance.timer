@@ -1,0 +1,11 @@
+[Unit]
+Description=Nodalia Guardian - Process issue and PR maintenance events
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=1min
+AccuracySec=20s
+Unit=guardian-maintenance.service
+
+[Install]
+WantedBy=timers.target

@@ -88,6 +88,18 @@ def _command(api: MaintenanceAPI, queue: MaintenanceQueue, row, issue: dict,
             return "Unverified or edited comment"
     cmd, args = command
     is_pr = bool(issue.get("pull_request"))
+    # Even harmless help/status replies consume write-rate quota. Restrict
+    # slash commands to actual collaborators, not every public commenter.
+    if api.permission(repo, sender) not in {"write", "maintain", "admin"}:
+        return "Command requires repository write access"
+    if kind == "check_action":
+        check = api._get(api._path(repo) + f"/check-runs/{comment_id}")
+        app_id = (check.get("app") or {}).get("id")
+        pr = api.get_pr(repo, number)
+        if (str(app_id) != os.environ.get("GITHUB_APP_ID")
+                or check.get("head_sha") != (pr.get("head") or {}).get("sha")
+                or pr.get("draft") or pr.get("state") != "open"):
+            return "Stale or unverified Guardian action button"
     if cmd == "help":
         api.comment(repo, number,
                     "**Nodalia Guardian** · Commands: /guardian status, "
@@ -165,16 +177,26 @@ def _command(api: MaintenanceAPI, queue: MaintenanceQueue, row, issue: dict,
             db.execute("""CREATE TABLE IF NOT EXISTS guardian_operations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 repo TEXT NOT NULL, pr INTEGER NOT NULL, installation INTEGER NOT NULL,
-                requester_id INTEGER NOT NULL, kind TEXT NOT NULL, sha TEXT NOT NULL,
+                requester_id INTEGER NOT NULL, requester TEXT NOT NULL,
+                target_comment_id INTEGER, kind TEXT NOT NULL, sha TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'queued',
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(repo,pr,sha,kind)
             )""")
+            # A one-time migration is safe if an earlier worker created
+            # the operation table with fewer columns.
+            columns = {info[1] for info in db.execute("PRAGMA table_info(guardian_operations)")}
+            if "requester" not in columns:
+                db.execute("ALTER TABLE guardian_operations ADD COLUMN requester TEXT NOT NULL DEFAULT ''")
+            if "target_comment_id" not in columns:
+                db.execute("ALTER TABLE guardian_operations ADD COLUMN target_comment_id INTEGER")
             count = db.execute(
                 """INSERT OR IGNORE INTO guardian_operations
-                   (repo,pr,installation,requester_id,kind,sha)
-                   VALUES (?,?,?,?,?,?)""",
-                (repo, number, installation, sender_id, cmd, sha)
+                   (repo,pr,installation,requester_id,requester,target_comment_id,kind,sha)
+                   VALUES (?,?,?,?,?,?,?,?)""",
+                (repo, number, installation, sender_id, sender,
+                 int(args.lstrip("#")) if cmd == "fix" and args else None,
+                 cmd, sha)
             ).rowcount
         if count:
             api.comment(repo, number,
@@ -226,7 +248,7 @@ def process_maintenance(queue: MaintenanceQueue, *, enable_triage: bool,
         # never sent to Anthropic without a separate explicit policy.
         if enable_haiku and not any(label.startswith("type:") for label in labels):
             metadata = api._get(api._path(repo))
-            if metadata.get("private"):
+            if metadata.get("private") is not False:
                 labels.add("needs-triage")
             else:
                 haiku_labels, _ = classify_haiku(

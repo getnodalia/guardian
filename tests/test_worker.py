@@ -89,6 +89,19 @@ class WorkerReadinessTests(unittest.TestCase):
         self.assertEqual(result["reason"], "Duplicate analysis")
         review.assert_not_called()
 
+    def test_guardian_owned_check_does_not_trigger_second_paid_review(self):
+        self.enqueue()
+        first, review = self.run_once()
+        self.assertEqual(first["status"], "done")
+        self.enqueue("delivery-2")
+        self.summary["checks"].append({
+            "name": "Nodalia Guardian · Maintain",
+            "status": "completed", "conclusion": "neutral",
+        })
+        result, review = self.run_once()
+        self.assertEqual(result["reason"], "Duplicate analysis")
+        review.assert_not_called()
+
     def test_new_sha_supersedes_old_delivery(self):
         self.enqueue()
         self.raw["sha"] = "b" * 40

@@ -60,6 +60,25 @@ class ClaudeResponseTests(unittest.TestCase):
         self.assertEqual(body["output_config"]["format"]["type"], "json_schema")
         self.assertEqual(body["output_config"]["format"]["schema"], REVIEW_SCHEMA)
 
+    def test_haiku_disables_adaptive_thinking_for_simple_classification(self):
+        ledger = FakeLedger()
+        with patch("nodalia_guardian.anthropic_api.urllib.request.urlopen",
+                   return_value=io.BytesIO(self.message())) as urlopen:
+            analyze({}, "test-key", "claude-haiku-5-5", 350, ledger)
+            body = json.loads(urlopen.call_args.args[0].data)
+        self.assertEqual(body["thinking"], {"type": "disabled"})
+
+    def test_sonnet_adaptive_medium_effort_for_fixing(self):
+        ledger = FakeLedger()
+        with patch("nodalia_guardian.anthropic_api.urllib.request.urlopen",
+                   return_value=io.BytesIO(self.message())) as urlopen:
+            analyze({}, "test-key", "claude-sonnet-5-5", 8192, ledger,
+                    thinking_mode="adaptive")
+            body = json.loads(urlopen.call_args.args[0].data)
+        self.assertEqual(body["thinking"], {"type": "adaptive"})
+        self.assertEqual(body["output_config"]["effort"], "medium")
+        self.assertEqual(body["max_tokens"], 8192)
+
     def test_opus_does_not_use_sonnet_only_thinking_mode(self):
         ledger = FakeLedger()
         with patch("nodalia_guardian.anthropic_api.urllib.request.urlopen",

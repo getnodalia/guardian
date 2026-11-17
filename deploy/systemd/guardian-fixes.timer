@@ -1,0 +1,11 @@
+[Unit]
+Description=Nodalia Guardian - Process authorized code correction requests
+
+[Timer]
+OnBootSec=4min
+OnUnitInactiveSec=2min
+AccuracySec=20s
+Unit=guardian-fixes.service
+
+[Install]
+WantedBy=timers.target

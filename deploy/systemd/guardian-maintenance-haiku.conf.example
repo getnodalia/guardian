@@ -1,0 +1,5 @@
+# Optional drop-in after verifying Claude Console hard spending cap.
+# Save as /etc/systemd/system/guardian-maintenance.service.d/haiku.conf
+[Service]
+ExecStart=
+ExecStart=/opt/guardian/.venv/bin/python -m nodalia_guardian maintain --db /var/lib/guardian/deliveries.sqlite3 --enable-triage --enable-haiku --confirm-paid --confirm-write --monthly-budget 20

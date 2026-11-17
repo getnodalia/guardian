@@ -1,0 +1,6 @@
+# Optional drop-in after testing exact duplicate logic and policy.
+# Save as /etc/systemd/system/guardian-maintenance.service.d/closure.conf
+# When combined with the Haiku drop-in, merge both flags into one ExecStart.
+[Service]
+ExecStart=
+ExecStart=/opt/guardian/.venv/bin/python -m nodalia_guardian maintain --db /var/lib/guardian/deliveries.sqlite3 --enable-triage --enable-closure --confirm-write --monthly-budget 20

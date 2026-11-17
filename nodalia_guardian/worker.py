@@ -40,8 +40,11 @@ def process_one(queue: DeliveryQueue, *, required_checks: list[str], auto_approv
             return {"status": "skipped", "reason": "CI not complete"}
         signature = hashlib.sha256(json.dumps({
             "sha": raw["sha"],
+            # Guardian's own action-button check must not trigger a second
+            # paid review solely by appearing in the CI snapshot.
             "checks": sorted((c["name"], c["status"], c["conclusion"])
-                             for c in summary["checks"]),
+                             for c in summary["checks"]
+                             if not c["name"].startswith("Nodalia Guardian ·")),
             "truncated": summary["checks_truncated"],
         }, sort_keys=True).encode()).hexdigest()
         if not queue.reserve_fingerprint(repo, pr, signature):
@@ -53,6 +56,27 @@ def process_one(queue: DeliveryQueue, *, required_checks: list[str], auto_approv
                            auto_approve=auto_approve, required_checks=required_checks,
                            monthly_budget=monthly_budget)
         queue.finish(row, "done", result["decision"])
+        if os.environ.get("GUARDIAN_ENABLE_CHECK_ACTIONS") == "1":
+            # This requires separately approved Checks:write. Failure to
+            # create optional buttons does not undo the published review.
+            try:
+                from .maintenance_api import MaintenanceAPI
+                MaintenanceAPI(token).create_check(
+                    repo, expected_sha,
+                    title="Nodalia Guardian · Review actions",
+                    summary="Authorized maintainers can request a draft fix or "
+                            "conflict-resolution PR. Guardian never merges automatically.",
+                    actions=[
+                        {"label": "Propose fix",
+                         "description": "Create a reviewed Sonnet correction PR",
+                         "identifier": "guardian_fix"},
+                        {"label": "Resolve conflicts",
+                         "description": "Create a reviewed merge-resolution PR",
+                         "identifier": "guardian_resolve_conflicts"},
+                    ],
+                )
+            except Exception:
+                pass
         return {"status": "done", "decision": result["decision"], "repo": repo, "pr": pr}
     except Exception as exc:
         # Never leak token/secret/API response in logs or persisted queue messages.
