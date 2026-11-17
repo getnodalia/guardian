@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from .anthropic_api import analyze, AnthropicAPIError
+from .app_auth import AppAuthError
 from .budget import BudgetExceeded, BudgetLedger, MODEL_PRICES, default_db
 from .github_api import GitHubAPI, GitHubError, validate_repo
 from .review import markdown, summarize
@@ -86,6 +87,14 @@ def build_parser() -> argparse.ArgumentParser:
     sync.add_argument("--installation-id", type=int, required=True)
     sync.add_argument("--confirm-write", action="store_true")
 
+    doctor = sub.add_parser("doctor", help="read-only GitHub App installation and queue diagnostics")
+    doctor.add_argument("--app-id", type=int, help="GitHub App ID; defaults to GITHUB_APP_ID")
+    doctor.add_argument("--installation-id", required=True, type=int)
+    doctor.add_argument("--private-key", type=Path, help="defaults to GITHUB_APP_PRIVATE_KEY_PATH")
+    doctor.add_argument("--db", type=Path, help="existing SQLite DB, never modified")
+    doctor.add_argument("--repo", help="getnodalia/repository for queue inspection")
+    doctor.add_argument("--issue", type=int, help="issue or PR number to inspect")
+
     budget = sub.add_parser("budget", help="show local usage/reservation ledger")
     budget.add_argument("--monthly-budget", type=float, default=20.0)
     budget.add_argument("--ledger", type=Path, default=default_db())
@@ -95,6 +104,18 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        if args.command == "doctor":
+            from .installation_diagnostics import diagnose_installation
+            app_id = args.app_id or os.environ.get("GITHUB_APP_ID")
+            private_key = args.private_key or os.environ.get("GITHUB_APP_PRIVATE_KEY_PATH")
+            if not app_id or not private_key:
+                raise ValueError("Doctor needs a GitHub App ID and private key path")
+            report = diagnose_installation(
+                int(app_id), args.installation_id, private_key,
+                db_path=args.db, repo=args.repo, number=args.issue,
+            )
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+            return 0 if report["issues_ready"] else 2
         if args.command == "budget":
             ledger = BudgetLedger(args.ledger, args.monthly_budget)
             print(f"Local current-month spend and reservations: ${ledger.total_micro() / 1e6:.6f} / ${args.monthly_budget:.2f} USD")
@@ -274,6 +295,6 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(report)
         return 0
-    except (ValueError, GitHubError, AnthropicAPIError, BudgetExceeded, OSError) as exc:
+    except (ValueError, GitHubError, AnthropicAPIError, AppAuthError, BudgetExceeded, OSError) as exc:
         print(f"guardian: {exc}", file=sys.stderr)
         return 2
