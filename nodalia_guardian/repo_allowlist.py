@@ -71,6 +71,14 @@ def write_repos(repos: list[str], path: Path = DEFAULT_REPO_FILE) -> None:
         group_id = grp.getgrnam("guardian").gr_gid
     except KeyError:
         raise RuntimeError("guardian service group missing") from None
+    if (not isinstance(repos, list) or not repos or len(repos) > 500
+            or any(not isinstance(name, str) or not name.startswith("getnodalia/")
+                   or name.count("/") != 1 or name == "getnodalia/guardian"
+                   for name in repos)):
+        raise ValueError("Invalid installed repository list")
+    from .github_api import validate_repo
+    for name in repos:
+        validate_repo(name)
     serialized = json.dumps({"repositories": sorted(set(repos))}, indent=2) + "\n"
     folder = path.parent
     temp_name = None
