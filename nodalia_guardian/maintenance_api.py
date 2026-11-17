@@ -19,7 +19,7 @@ class MaintenanceAPI(GitHubAPI):
             raise ValueError("Maintenance is limited to getnodalia")
         return f"/repos/{owner}/{name}"
 
-    def _write(self, method: str, path: str, payload: dict) -> dict:
+    def _write(self, method: str, path: str, payload: dict, *, expect_array: bool = False) -> dict | list[dict]:
         if method not in {"POST", "PATCH"} or not self._token:
             raise GitHubError("write access requires a GitHub App installation token")
         url = "https://api.github.com" + path
@@ -48,7 +48,13 @@ class MaintenanceAPI(GitHubAPI):
             data = json.loads(raw)
         except ValueError:
             raise GitHubError("GitHub maintenance response was not JSON") from None
-        if not isinstance(data, dict):
+        if expect_array:
+            if (not isinstance(data, list) or len(data) > 500
+                    or any(not isinstance(item, dict)
+                           or not isinstance(item.get("name"), str)
+                           for item in data)):
+                raise GitHubError("GitHub maintenance response was not a label list")
+        elif not isinstance(data, dict):
             raise GitHubError("GitHub maintenance response was not an object")
         return data
 
@@ -74,12 +80,12 @@ class MaintenanceAPI(GitHubAPI):
         values = self._get_list(self._path(repo) + "/labels", {"per_page": 100})
         return {x["name"] for x in values if isinstance(x, dict) and isinstance(x.get("name"), str)}
 
-    def add_labels(self, repo: str, number: int, labels: list[str]) -> dict:
+    def add_labels(self, repo: str, number: int, labels: list[str]) -> list[dict]:
         labels = sorted(set(labels))
         if not labels or len(labels) > 8 or any(not _LABEL.fullmatch(x) for x in labels):
             raise ValueError("labels must be a short predefined list")
         return self._write("POST", self._path(repo) + f"/issues/{number}/labels",
-                           {"labels": labels})
+                           {"labels": labels}, expect_array=True)
 
     def create_label(self, repo: str, name: str, color: str, description: str) -> dict:
         if not _LABEL.fullmatch(name) or not re.fullmatch(r"[0-9a-fA-F]{6}", color):
