@@ -31,7 +31,7 @@ def safe_source_path(path: object) -> bool:
 
 
 def safe_bot_branch(name: str) -> bool:
-    return bool(re.fullmatch(r"guardian/(?:fix|resolve)-pr[1-9][0-9]*-[0-9a-f]{10}", name))
+    return bool(re.fullmatch(r"guardian/(?:fix|fixall|resolve)-pr[1-9][0-9]*-[0-9a-f]{10}", name))
 
 
 class GitChangesAPI(MaintenanceAPI):
