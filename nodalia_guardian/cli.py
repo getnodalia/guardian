@@ -39,7 +39,9 @@ def build_parser() -> argparse.ArgumentParser:
     serve = sub.add_parser("serve", help="receive and queue authenticated GitHub App webhooks")
     serve.add_argument("--host", default="127.0.0.1", help="bind loopback behind a HTTPS reverse proxy")
     serve.add_argument("--port", type=int, default=8787)
-    serve.add_argument("--allowed-repo", action="append", required=True)
+    serve.add_argument("--allowed-repo", action="append", default=[])
+    serve.add_argument("--allowed-repo-file", type=Path,
+                       help="additional allowlisted repositories from a root-owned JSON file")
     serve.add_argument("--db", type=Path, default=default_db().with_name("deliveries.sqlite3"))
 
     worker = sub.add_parser("worker", help="process one queued delivery with a GitHub App + Claude")
@@ -78,6 +80,10 @@ def build_parser() -> argparse.ArgumentParser:
     buttons.add_argument("--installation-id", type=int, required=True)
     buttons.add_argument("--confirm-write", action="store_true")
 
+    sync = sub.add_parser("sync-repos", help="build allowlist from App installation repositories")
+    sync.add_argument("--installation-id", type=int, required=True)
+    sync.add_argument("--confirm-write", action="store_true")
+
     budget = sub.add_parser("budget", help="show local usage/reservation ledger")
     budget.add_argument("--monthly-budget", type=float, default=20.0)
     budget.add_argument("--ledger", type=Path, default=default_db())
@@ -95,8 +101,12 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "serve":
             from .webhooks import DeliveryQueue, make_server
             queue = DeliveryQueue(args.db)
+            allowed_repos = set(args.allowed_repo)
+            if args.allowed_repo_file:
+                from .repo_allowlist import load_repos
+                allowed_repos |= load_repos(args.allowed_repo_file)
             server = make_server(args.host, args.port, os.environ.get("GUARDIAN_WEBHOOK_SECRET", ""),
-                                 queue, set(args.allowed_repo))
+                                 queue, allowed_repos)
             print(f"Guardian webhook listener on {args.host}:{args.port}; webhook path /webhook")
             try:
                 server.serve_forever()
@@ -209,6 +219,19 @@ def main(argv: list[str] | None = None) -> int:
                 ],
             )
             print(json.dumps({"check_run_id": result.get("id")}))
+            return 0
+        if args.command == "sync-repos":
+            if not args.confirm_write:
+                raise ValueError("sync-repos requires --confirm-write")
+            from .repo_allowlist import installed_repositories, write_repos
+            names = installed_repositories(
+                int(os.environ["GITHUB_APP_ID"]),
+                os.environ["GITHUB_APP_PRIVATE_KEY_PATH"],
+                args.installation_id,
+            )
+            write_repos(names)
+            print(json.dumps({"repository_count": len(names),
+                              "allowlist": "/etc/guardian/repos.json"}, ensure_ascii=False))
             return 0
         if args.command == "review":
             from .bot import review_pr
