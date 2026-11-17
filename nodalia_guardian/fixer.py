@@ -84,10 +84,11 @@ def propose_fix(api: GitChangesAPI, repo: str, number: int, sha: str,
                 monthly_budget: float = 20) -> dict:
     pr = api.get_pr(repo, number)
     head, base = pr.get("head") or {}, pr.get("base") or {}
+    if (base.get("repo") or {}).get("private"):
+        raise ValueError("Refusing to send private repository source to Sonnet")
     head_repo = (head.get("repo") or {}).get("full_name")
     if (pr.get("state") != "open" or pr.get("draft") or head.get("sha") != sha
-            or head_repo != repo or base.get("ref") in {"main", "master"}
-            and head.get("ref") in {"main", "master"}):
+            or head_repo != repo or head.get("ref") in {"main", "master"}):
         raise ValueError("PR is stale, draft, external or protected")
     target_base = head.get("ref")
     if not isinstance(target_base, str) or target_base.startswith("guardian/"):
