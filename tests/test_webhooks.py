@@ -57,6 +57,18 @@ class WebhookTests(unittest.TestCase):
             with self.subTest(payload=payload), self.assertRaises(WebhookError):
                 parse_delivery(payload, "pull_request", {"getnodalia/agora"})
 
+    def test_own_check_completion_does_not_retrigger_review(self):
+        from unittest.mock import patch
+        self.delivery["action"] = "completed"
+        self.delivery["check_run"] = {
+            "app": {"id": 5794704},
+            "pull_requests": [{"number": 18, "head": {"sha": "a" * 40}}],
+        }
+        with patch.dict("os.environ", {"GITHUB_APP_ID": "5794704"}):
+            self.assertEqual(parse_delivery(
+                json.dumps(self.delivery).encode(),
+                "check_run", {"getnodalia/agora"}), [])
+
     def test_queue_deduplicates_and_requires_one_claim(self):
         with tempfile.TemporaryDirectory() as td:
             queue = DeliveryQueue(Path(td) / "events.sqlite")
