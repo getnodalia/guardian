@@ -66,6 +66,8 @@ def review_pr(repo: str, pr: int, *, ai: bool, publish: bool,
         live = api.get_pr(repo, pr)
         if live.get("head", {}).get("sha") != summary["head_sha"]:
             raise GitHubError("PR changed during review: refusing to publish stale review")
+        if live.get("state") != "open" or live.get("draft"):
+            raise GitHubError("PR closed or became draft during review: refusing to publish")
         api.create_review(repo, pr, event=event, body=body, commit_id=summary["head_sha"])
     return {"repo": repo, "pr": pr, "sha": summary["head_sha"], "decision": event,
             "approval_blockers": reasons, "findings": (review or {}).get("findings", []),
