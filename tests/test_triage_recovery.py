@@ -115,7 +115,7 @@ class RecoveryTests(unittest.TestCase):
 
     def test_pr_synchronize_reclassifies_new_commit_only(self):
         self.api.issue.return_value = {
-            "number": 42, "state": "open", "pull_request": {},
+            "number": 42, "state": "open", "pull_request": {"url": "https://api.github.com/repos/getnodalia/agora/pulls/42"},
             "title": "Add connection recovery", "body": "New behavior",
         }
         self.api.existing_labels.return_value = {"type:feature"}
