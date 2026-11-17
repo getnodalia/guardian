@@ -49,6 +49,21 @@ def build_parser() -> argparse.ArgumentParser:
     worker.add_argument("--monthly-budget", type=float, default=20.0)
     worker.add_argument("--confirm-paid-publishing", action="store_true", help="must be set explicitly")
 
+    maintain = sub.add_parser("maintain", help="process one issue, PR or maintainer command event")
+    maintain.add_argument("--db", type=Path, default=default_db().with_name("deliveries.sqlite3"))
+    maintain.add_argument("--enable-triage", action="store_true", help="allow low-risk GitHub labels")
+    maintain.add_argument("--enable-haiku", action="store_true", help="opt in to paid Haiku triage")
+    maintain.add_argument("--enable-closure", action="store_true", help="allow only verified duplicate closure")
+    maintain.add_argument("--enable-operations", action="store_true", help="queue authorized code fixes")
+    maintain.add_argument("--confirm-paid", action="store_true", help="explicitly authorize API spending")
+    maintain.add_argument("--confirm-write", action="store_true", help="explicitly authorize GitHub mutations")
+    maintain.add_argument("--monthly-budget", type=float, default=20.0)
+
+    labels = sub.add_parser("setup-labels", help="seed standardized labels in one authorized repository")
+    labels.add_argument("--repo", required=True)
+    labels.add_argument("--installation-id", type=int, required=True)
+    labels.add_argument("--confirm-write", action="store_true")
+
     budget = sub.add_parser("budget", help="show local usage/reservation ledger")
     budget.add_argument("--monthly-budget", type=float, default=20.0)
     budget.add_argument("--ledger", type=Path, default=default_db())
@@ -89,6 +104,48 @@ def main(argv: list[str] | None = None) -> int:
                                  monthly_budget=args.monthly_budget)
             print(json.dumps(result or {"status": "empty"}, ensure_ascii=False))
             return 2 if result and result["status"] == "failed" else 0
+        if args.command == "maintain":
+            if not args.confirm_write:
+                raise ValueError("maintenance requires --confirm-write")
+            if args.enable_haiku and (not args.confirm_paid or not os.environ.get("ANTHROPIC_API_KEY")):
+                raise ValueError("Haiku requires --confirm-paid and an Anthropic API key")
+            if not (0 < args.monthly_budget <= 100):
+                raise ValueError("Monthly budget must be between 0 and 100")
+            if not (os.environ.get("GITHUB_APP_ID") and
+                    os.environ.get("GITHUB_APP_PRIVATE_KEY_PATH")):
+                raise ValueError("Maintenance requires GitHub App credentials")
+            from .maintenance import MaintenanceQueue
+            from .maintenance_worker import process_maintenance
+            from .webhooks import DeliveryQueue
+            result = process_maintenance(
+                MaintenanceQueue(DeliveryQueue(args.db)),
+                enable_triage=args.enable_triage, enable_haiku=args.enable_haiku,
+                enable_closure=args.enable_closure,
+                enable_operations=args.enable_operations,
+                monthly_budget=args.monthly_budget,
+            )
+            print(json.dumps(result or {"status": "empty"}, ensure_ascii=False))
+            return 2 if result and result.get("status") == "failed" else 0
+        if args.command == "setup-labels":
+            if not args.confirm_write:
+                raise ValueError("setup-labels requires --confirm-write")
+            from .app_auth import installation_access_token
+            from .maintenance_api import MaintenanceAPI
+            from .triage import LABELS
+            validate_repo(args.repo)
+            token = installation_access_token(
+                int(os.environ["GITHUB_APP_ID"]),
+                os.environ["GITHUB_APP_PRIVATE_KEY_PATH"], args.installation_id,
+            )
+            api = MaintenanceAPI(token)
+            existing = api.existing_labels(args.repo)
+            added = []
+            for name, (color, description) in LABELS.items():
+                if name not in existing:
+                    api.create_label(args.repo, name, color, description)
+                    added.append(name)
+            print(json.dumps({"added": added}, ensure_ascii=False))
+            return 0
         if args.command == "review":
             from .bot import review_pr
             result = review_pr(args.repo, args.pr, ai=args.ai, publish=args.publish,

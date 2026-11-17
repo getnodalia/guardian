@@ -124,6 +124,9 @@ def make_server(address: str, port: int, secret: str, queue: DeliveryQueue,
     if not allowed_repos or any(not x.startswith("getnodalia/") for x in allowed_repos):
         raise ValueError("Configure an explicit getnodalia repository allowlist")
 
+    from .maintenance import MaintenanceQueue, parse_maintenance
+    maintenance = MaintenanceQueue(queue)
+
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             if self.path == "/healthz":
@@ -149,14 +152,19 @@ def make_server(address: str, port: int, secret: str, queue: DeliveryQueue,
             try:
                 verify(body, self.headers.get("X-Hub-Signature-256"), secret)
                 items = parse_delivery(body, self.headers.get("X-GitHub-Event", ""), allowed_repos)
-                inserted = queue.add(self.headers.get("X-GitHub-Delivery", ""), items)
+                delivery_id = self.headers.get("X-GitHub-Delivery", "")
+                inserted = queue.add(delivery_id, items)
+                maintenance_item = parse_maintenance(
+                    body, self.headers.get("X-GitHub-Event", ""), allowed_repos
+                )
+                maintenance_inserted = maintenance.add(delivery_id, maintenance_item)
             except WebhookError:
                 self.send_error(403)
                 return
             self.send_response(202)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(json.dumps({"queued": inserted}).encode())
+            self.wfile.write(json.dumps({"queued": inserted, "maintenance_queued": maintenance_inserted}).encode())
 
         def log_message(self, format, *args):
             # Do not log webhook bodies or authentication headers.
