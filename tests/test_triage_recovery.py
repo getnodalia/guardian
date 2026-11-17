@@ -89,7 +89,7 @@ class RecoveryTests(unittest.TestCase):
             second = self.submit("delivery-2", "edited")
         self.assertEqual(first["status"], "done", first)
         self.assertEqual(first["labels"], ["needs-triage"])
-        self.assertEqual(first["haiku"], "model_unavailable")
+        self.assertEqual(first["haiku"], "api_http_400")
         self.assertEqual(second["status"], "skipped")
         self.assertEqual(model.call_count, 1)
         self.api.add_labels.assert_called_once_with(
