@@ -40,8 +40,10 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--host", default="127.0.0.1", help="bind loopback behind a HTTPS reverse proxy")
     serve.add_argument("--port", type=int, default=8787)
     serve.add_argument("--allowed-repo", action="append", default=[])
-    serve.add_argument("--allowed-repo-file", type=Path,
-                       help="additional allowlisted repositories from a root-owned JSON file")
+    # Boolean opt-in only: callers can never choose a filesystem path.
+    # load_repos() reads the fixed /etc/guardian/repos.json.
+    serve.add_argument("--allowed-repo-file", action="store_true",
+                       help="include repositories from fixed /etc/guardian/repos.json")
     serve.add_argument("--db", type=Path, default=default_db().with_name("deliveries.sqlite3"))
 
     worker = sub.add_parser("worker", help="process one queued delivery with a GitHub App + Claude")
@@ -104,7 +106,7 @@ def main(argv: list[str] | None = None) -> int:
             allowed_repos = set(args.allowed_repo)
             if args.allowed_repo_file:
                 from .repo_allowlist import load_repos
-                allowed_repos |= load_repos(args.allowed_repo_file)
+                allowed_repos |= load_repos()
             server = make_server(args.host, args.port, os.environ.get("GUARDIAN_WEBHOOK_SECRET", ""),
                                  queue, allowed_repos)
             print(f"Guardian webhook listener on {args.host}:{args.port}; webhook path /webhook")
