@@ -18,7 +18,19 @@ def parse_command(body: object) -> tuple[str, str] | None:
     match = _SAFE_COMMAND.fullmatch(body.strip())
     if not match:
         return None
-    return (match.group(1) or "help").lower(), (match.group(2) or "").strip()
+    command, args = (match.group(1) or "help").lower(), (match.group(2) or "").strip()
+    if command not in {"help", "status", "review", "fix",
+                       "resolve-conflicts", "duplicate", "label"}:
+        return None
+    if command in {"help", "status", "review", "resolve-conflicts"} and args:
+        return None
+    if command == "fix" and args and not re.fullmatch(r"#?[0-9]{1,10}", args):
+        return None
+    if command == "duplicate" and not re.fullmatch(r"#?[0-9]{1,8}", args):
+        return None
+    if command == "label" and not re.fullmatch(r"[A-Za-z0-9:_-]{1,50}", args):
+        return None
+    return command, args
 
 
 def parse_maintenance(body: bytes, event: str, allowed_repos: set[str]) -> dict | None:
