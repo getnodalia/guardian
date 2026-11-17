@@ -8,6 +8,7 @@ from .app_auth import installation_access_token
 from .budget import BudgetLedger, default_db
 from .decisions import REVIEW_SCHEMA, REVIEW_SYSTEM, gate, parse_review, review_markdown
 from .github_api import GitHubAPI, GitHubError, validate_repo
+from .inline import build_inline_comments
 from .review import summarize
 
 
@@ -37,6 +38,7 @@ def review_pr(repo: str, pr: int, *, ai: bool, publish: bool,
     if ai and raw["pr"].get("base", {}).get("repo", {}).get("private", False):
         raise ValueError("Refusing to send private repository patches to Claude")
     body = None
+    comments = []
     event = "COMMENT"
     review = None
     cost = None
@@ -60,7 +62,8 @@ def review_pr(repo: str, pr: int, *, ai: bool, publish: bool,
         review = parse_review(llm, {f["name"] for f in summary["files"]})
         own = "guardian" in str(raw["pr"].get("head", {}).get("label", "")).lower()
         event, reasons = gate(summary, review, required_checks, auto_approve, own)
-        body = review_markdown(summary, review, reasons, event)
+        comments, placed_indices = build_inline_comments(review["findings"], raw["files"])
+        body = review_markdown(summary, review, reasons, event, placed_indices)
     if publish:
         # Refuse outdated results: the PR head must still match after the AI call.
         live = api.get_pr(repo, pr)
@@ -68,7 +71,12 @@ def review_pr(repo: str, pr: int, *, ai: bool, publish: bool,
             raise GitHubError("PR changed during review: refusing to publish stale review")
         if live.get("state") != "open" or live.get("draft"):
             raise GitHubError("PR closed or became draft during review: refusing to publish")
-        api.create_review(repo, pr, event=event, body=body, commit_id=summary["head_sha"])
+        before_base = (raw["pr"].get("base") or {}).get("sha")
+        current_base = (live.get("base") or {}).get("sha")
+        if before_base and current_base != before_base:
+            raise GitHubError("PR base changed during review: refusing to publish stale comments")
+        api.create_review(repo, pr, event=event, body=body,
+                          commit_id=summary["head_sha"], comments=comments)
     return {"repo": repo, "pr": pr, "sha": summary["head_sha"], "decision": event,
             "approval_blockers": reasons, "findings": (review or {}).get("findings", []),
-            "body": body, "published": publish, "cost_usd": cost, "summary": summary}
+            "body": body, "inline_comments": len(comments), "published": publish, "cost_usd": cost, "summary": summary}
