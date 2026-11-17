@@ -102,9 +102,10 @@ def propose_fix(api: GitChangesAPI, repo: str, number: int, sha: str,
                "review": comment["body"][:2000],
                "comment_id": comment.get("id")}
     raw, cost = analyze(
-        payload, key, "claude-sonnet-5-5", 3500,
+        payload, key, "claude-sonnet-5-5", 8192,
         BudgetLedger(default_db(), monthly_budget),
         system=FIX_SYSTEM, output_schema=FIX_SCHEMA,
+        thinking_mode="adaptive",
     )
     result, explanation = _validate_proposed_patch(source, path, raw)
 
