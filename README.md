@@ -7,11 +7,13 @@ Guardian has a **free, read-only `scan` command** for pull requests and CI, and 
 publish `COMMENT`, `REQUEST_CHANGES` or a gated `APPROVE` review. The latter is not enabled
 by default: it requires explicit flags, real GitHub App credentials and API credits.
 
-The webhook receiver verifies signatures and stores events in a SQLite queue. A **separate,
-explicitly activated** worker performs reviews; receiving a webhook alone never spends
-credits. Guardian currently **does not correct code, push commits, merge PRs, deploy, or
-execute repository tests**. Autonomous corrections remain a planned, separately permissioned
-capability. CI status is only a snapshot, not proof that branch protection has passed.
+The webhook receiver verifies signatures and persists events in SQLite. Separate,
+explicitly activated review, maintenance and correction workers process their own queues.
+Guardian can classify issues/PRs and propose a strictly bounded one-file correction or
+small 3-way conflict resolution on a fresh bot-owned branch and **draft PR**, when a
+privileged maintainer explicitly requests it. It never merges, runs PR code on the
+home server, approves its own corrections, or bypasses branch protection. CI status
+is a snapshot, not proof that every required repository check has passed.
 
 Guardian uses **the exact official Nodalia logo chosen by the owner as its GitHub App avatar**,
 not a generated graphic. To set up the app, install only the needed permissions and upload the
@@ -25,9 +27,25 @@ one-line safe replacement outside sensitive paths, GitHub displays its native
 **Apply suggestion** control. Unanchored findings remain in the summary;
 comments never invent diff locations.
 
-The automatic worker still uses the existing read-only+review permissions.
-It cannot edit branches, assign labels, process issues or close duplicate PRs.
-Those capabilities require separate staging and GitHub App permission grants.
+After enabling the maintenance feature and granting its installation **Issues: write**,
+Guardian also labels issues and PRs, and falls back to `needs-triage` if a paid
+Haiku classification fails. Corrective operations use separate opt-in flags and
+privileged sender authorization. See [authorized draft fixes](docs/authorized-fixes.md).
+
+**Foundation-aware reviews** (after deploying this feature) retrieve bounded,
+versioned Foundation engineering/security/CI/NDL standards plus each PR's
+base-commit `AGENTS.md`, optional `NODALIA_MIGRATION.md` and relevant root
+manifest. Guardian can run against any explicitly authorized public `getnodalia/*`
+repository; it does not maintain a complete local source-code index. Its model
+prompt includes only the selected documents and changed PR patches, along with
+GitHub-visible CodeRabbit/SonarQube bot observations where available.
+
+Missing required context or unavailable quality-comment data blocks **automatic
+approval**, not all review comments. Reports from third-party bots remain untrusted
+until verified in the diff. The foundation commit SHA and target PR base SHA
+are included in the context for traceability. Review requests consume the
+existing **shared 20 USD/month** local ledger; the Anthropic Console spend limit
+remains authoritative. No new paid services or GitHub runners are introduced.
 
 See [the professional maintenance roadmap](docs/maintenance-automation.md)
 for planned Haiku-assisted triage, labels, slash commands, duplicate handling
@@ -115,7 +133,8 @@ pay for interactive Claude Code. Confirm your credits and billing status before 
 
 - Read-only scan by default; a **separately authenticated GitHub App** can post reviews only
   through an explicit `review --ai --publish` or opt-in worker command.
-- No autonomous code changes, commits, merging, or publishing releases.
+- No direct pushes to main, self-approval, merges or release publishing. Opt-in
+  fix/merge proposals are draft PRs requiring a privileged maintainer.
 - The GitHub-hosted `Guardian · Offline tests` workflow runs compilation and
 offline unit tests on PRs and main. It has read-only permissions, uses a SHA-
 pinned first-party checkout action, and never uses Claude credentials.
