@@ -35,8 +35,10 @@ def safe_bot_branch(name: str) -> bool:
 
 
 class GitChangesAPI(MaintenanceAPI):
-    def _write(self, method: str, path: str, payload: dict) -> dict:
+    def _write(self, method: str, path: str, payload: dict, *, expect_array: bool = False) -> dict | list[dict]:
         if method == "PUT":
+            if expect_array:
+                raise ValueError("Contents API must return an object")
             # Only the GitHub contents API may use PUT from this adapter.
             if "/contents/" not in path or not safe_bot_branch(payload.get("branch", "")):
                 raise ValueError("Refusing PUT outside a bot-owned fix branch")
@@ -73,7 +75,7 @@ class GitChangesAPI(MaintenanceAPI):
             if not isinstance(obj, dict):
                 raise GitHubError("Invalid bot-branch response type")
             return obj
-        return super()._write(method, path, payload)
+        return super()._write(method, path, payload, expect_array=expect_array)
 
     def read_text(self, repo: str, path: str, ref: str) -> tuple[str, str]:
         if not safe_source_path(path) or not _SHA.fullmatch(ref):
