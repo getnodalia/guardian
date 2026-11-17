@@ -44,6 +44,13 @@ def parse_delivery(body: bytes, event: str, allowed_repos: set[str]) -> list[tup
         prs = [payload.get("pull_request")]
     elif event in {"check_suite", "check_run"} and action == "completed":
         check = payload.get(event) or {}
+        # A Guardian-owned Check Run (created to display action buttons)
+        # must never retrigger Sonnet review of itself.
+        if isinstance(check, dict):
+            import os
+            app_id = (check.get("app") or {}).get("id") if isinstance(check.get("app"), dict) else None
+            if type(app_id) is int and str(app_id) == os.environ.get("GITHUB_APP_ID"):
+                return []
         prs = check.get("pull_requests", []) if isinstance(check, dict) else []
     if not isinstance(prs, list):
         return []
