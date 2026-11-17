@@ -55,7 +55,7 @@ def _haiku_failure_reason(exc: Exception) -> str:
     if isinstance(exc, BudgetExceeded):
         return "budget_exceeded"
     if isinstance(exc, AnthropicAPIError):
-        http_status = re.search(r"\\bHTTP ([45][0-9]{2})\\b", str(exc))
+        http_status = re.search(r"\bHTTP ([45][0-9]{2})\b", str(exc))
         if http_status:
             return "api_http_" + http_status.group(1)
         if "max_tokens" in str(exc):
