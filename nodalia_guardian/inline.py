@@ -9,7 +9,7 @@ import re
 
 _HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
 # Suggestions in sensitive files require an explicit fix workflow and human review.
-_SENSITIVE = re.compile(r"(?:^|/)(?:\\.github|auth|oauth|crypto|cipher|mfa|security|secret|token|keys?|deploy|infra|migration)(?:[._/-]|$)", re.IGNORECASE)
+_SENSITIVE = re.compile(r"(?:^|/)(?:\.github|auth|oauth|crypto|cipher|mfa|security|secret|token|keys?|deploy|infra|migration)(?:[._/-]|$)", re.IGNORECASE)
 
 
 def added_lines(patch: str) -> dict[int, str]:
