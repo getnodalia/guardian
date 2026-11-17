@@ -6,6 +6,7 @@ or unrestricted GitHub API responses. Never create/modify a SQLite database.
 
 import sqlite3
 from collections import Counter
+from contextlib import closing
 from pathlib import Path
 from urllib.parse import quote
 
@@ -19,14 +20,14 @@ def _queue_snapshot(db_path: Path, repo: str, number: int) -> dict:
         return {"available": False, "reason": "database_not_found"}
     uri = "file:" + quote(str(db_path.absolute()), safe="/") + "?mode=ro"
     try:
-        with sqlite3.connect(uri, uri=True, timeout=2) as db:
+        with closing(sqlite3.connect(uri, uri=True, timeout=2)) as db:
             table = db.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='maintenance_events'"
             ).fetchone()
             if not table:
                 return {"available": False, "reason": "maintenance_table_missing"}
             rows = db.execute(
-                """SELECT kind,status,result,created_at
+                """SELECT kind,status,created_at
                    FROM maintenance_events
                    WHERE repo=? AND number=?
                    ORDER BY created_at DESC, delivery_id DESC LIMIT 10""",
@@ -37,9 +38,8 @@ def _queue_snapshot(db_path: Path, repo: str, number: int) -> dict:
     return {
         "available": True,
         "matching_events": [
-            {"kind": kind, "status": status, "result": result[:150],
-             "created_at": created_at}
-            for kind, status, result, created_at in rows
+            {"kind": kind, "status": status, "created_at": created_at}
+            for kind, status, created_at in rows
         ],
     }
 
