@@ -48,7 +48,10 @@ HAIKU_SCHEMA = {
         "category": {"type": "string", "enum": list(CATEGORIES) + ["unknown"]},
         "area": {"type": "string", "enum": list(AREAS) + ["unknown"]},
         "priority": {"type": "string", "enum": list(PRIORITIES)},
-        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        # Claude structured outputs reject numeric min/max constraints (HTTP 400).
+        # Validate 0 <= confidence <= 1 locally after decoding.
+        "confidence": {"type": "number",
+                       "description": "Confidence from 0 to 1 inclusive."},
     },
     "required": ["category", "area", "priority", "confidence"],
     "additionalProperties": False,
@@ -97,7 +100,7 @@ def classify_haiku(title: str, body: str, *, key: str, ledger_path=None,
         data = json.loads(raw)
     except ValueError as exc:
         raise ValueError("Invalid Haiku triage response") from exc
-    if not isinstance(data, dict) or not isinstance(data.get("confidence"), (int, float)):
+    if not isinstance(data, dict) or type(data.get("confidence")) not in (int, float):
         raise ValueError("Incomplete Haiku triage response")
     if not 0 <= data["confidence"] <= 1:
         raise ValueError("Invalid Haiku triage confidence")
