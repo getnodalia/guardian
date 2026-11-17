@@ -8,6 +8,8 @@ that exact new-side line. Suggestions remain human-applied GitHub UI actions.
 import re
 
 _HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
+# Suggestions in sensitive files require an explicit fix workflow and human review.
+_SENSITIVE = re.compile(r"(?:^|/)(?:\\.github|auth|oauth|crypto|cipher|mfa|security|secret|token|keys?|deploy|infra|migration)(?:[._/-]|$)", re.IGNORECASE)
 
 
 def added_lines(patch: str) -> dict[int, str]:
@@ -61,12 +63,14 @@ def build_inline_comments(findings: list[dict], files: list[dict], *,
         if not isinstance(message, str) or not isinstance(severity, str):
             continue
         title = f"**{severity.upper()} · Nodalia Guardian**"
-        body = f"{title}\n\n{message}"
+        safe_message = message.replace("```", "'''")
+        body = f"{title}\n\n{safe_message}"
         suggestion = item.get("suggestion")
         if (isinstance(suggestion, str) and suggestion.strip()
                 and len(suggestion) <= 400
                 and "\n" not in suggestion and "\r" not in suggestion
-                and "```" not in suggestion and suggestion != source):
+                and "```" not in suggestion and suggestion != source
+                and not _SENSITIVE.search(path)):
             body += ("\n\n**Proposed change** — review before applying:\n\n"
                      f"```suggestion\n{suggestion}\n```")
         comments.append({"path": path, "line": line, "side": "RIGHT", "body": body})
