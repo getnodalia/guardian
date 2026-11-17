@@ -10,7 +10,9 @@ import json
 import os
 import re
 
+from .anthropic_api import AnthropicAPIError
 from .app_auth import installation_access_token
+from .budget import BudgetExceeded
 from .github_api import GitHubError
 from .maintenance import MaintenanceQueue, parse_command
 from .maintenance_api import MaintenanceAPI
@@ -48,11 +50,42 @@ def _mark_once(queue: MaintenanceQueue, fingerprint: str) -> bool:
         ).rowcount == 1
 
 
+def _triage_completed(queue: MaintenanceQueue, fingerprint: str) -> bool:
+    """Only successful triage is deduplicated.
+
+    The older maintenance_actions table contains fingerprints recorded BEFORE
+    classification, including failures. Keep that legacy table for privileged
+    close-command idempotency; never treat it as proof of successful triage.
+    """
+    with queue.queue.connection() as db:
+        db.execute("""CREATE TABLE IF NOT EXISTS maintenance_triage_completed (
+            fingerprint TEXT PRIMARY KEY,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )""")
+        return db.execute(
+            "SELECT 1 FROM maintenance_triage_completed WHERE fingerprint=?",
+            (fingerprint,),
+        ).fetchone() is not None
+
+
+def _mark_triage_completed(queue: MaintenanceQueue, fingerprint: str) -> None:
+    with queue.queue.connection() as db:
+        db.execute("""CREATE TABLE IF NOT EXISTS maintenance_triage_completed (
+            fingerprint TEXT PRIMARY KEY,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )""")
+        db.execute(
+            "INSERT OR IGNORE INTO maintenance_triage_completed (fingerprint) VALUES (?)",
+            (fingerprint,),
+        )
+
+
 def _fingerprint(repo: str, number: int, kind: str, state: dict) -> str:
     return hashlib.sha256(json.dumps({
         "repo": repo, "number": number, "kind": kind,
         "title": state.get("title"), "body": str(state.get("body") or "")[:3000],
         "sha": (state.get("head") or {}).get("sha"),
+        "base_sha": (state.get("base") or {}).get("sha"),
     }, sort_keys=True).encode()).hexdigest()
 
 
@@ -239,28 +272,40 @@ def process_maintenance(queue: MaintenanceQueue, *, enable_triage: bool,
         is_pr = kind == "pull_request"
         if is_pr != bool(issue.get("pull_request")):
             raise ValueError("Unexpected issue/PR kind")
-        if not _mark_once(queue, _fingerprint(repo, number, kind, issue)):
-            queue.finish(row, "skipped", "Triage already performed for this version")
+        # Issues API does not include PR head/base SHAs. Use the live PR
+        # snapshot so a synchronize event is a new classification version.
+        pr = api.get_pr(repo, number) if is_pr else None
+        fingerprint = _fingerprint(repo, number, kind, pr if pr else issue)
+        if _triage_completed(queue, fingerprint):
+            queue.finish(row, "skipped", "Triage already completed for this version")
             return {"status": "skipped", "reason": "Duplicate event"}
         title, body = str(issue.get("title") or ""), str(issue.get("body") or "")
         labels = heuristic_labels(title, body)
-        # Use the model only for genuinely ambiguous items. Private content is
-        # never sent to Anthropic without a separate explicit policy.
+        haiku_status = "not_needed"
+        # A model failure is never a reason to leave an issue unlabelled.
+        # Do not retry a possibly charged API call; mark needs-triage.
         if enable_haiku and not any(label.startswith("type:") for label in labels):
             metadata = api._get(api._path(repo))
             if metadata.get("private") is not False:
                 labels.add("needs-triage")
+                haiku_status = "private_repo"
             else:
-                haiku_labels, _ = classify_haiku(
-                    title, body, key=os.environ.get("ANTHROPIC_API_KEY", ""),
-                    monthly_budget=monthly_budget,
-                )
-                labels |= haiku_labels
+                try:
+                    haiku_labels, _ = classify_haiku(
+                        title, body, key=os.environ.get("ANTHROPIC_API_KEY", ""),
+                        monthly_budget=monthly_budget,
+                    )
+                except (AnthropicAPIError, BudgetExceeded, ValueError) as exc:
+                    labels.add("needs-triage")
+                    haiku_status = ("budget_exceeded" if isinstance(exc, BudgetExceeded)
+                                    else "model_unavailable")
+                else:
+                    labels |= haiku_labels
+                    haiku_status = "classified"
         if not any(label.startswith("type:") for label in labels):
             labels.add("needs-triage")
         duplicate = None
         if is_pr:
-            pr = api.get_pr(repo, number)
             duplicate = exact_pr_duplicate(pr, api.open_prs(repo))
         else:
             duplicate = exact_issue_duplicate(issue, api.similar_issues(repo, title))
@@ -274,9 +319,11 @@ def process_maintenance(queue: MaintenanceQueue, *, enable_triage: bool,
                         "The match was verified deterministically, not based only on AI.")
             if enable_closure:
                 (api.close_pr if is_pr else api.close_issue)(repo, number)
-        queue.finish(row, "done", "Labels: " + ",".join(applied)[:100])
+        _mark_triage_completed(queue, fingerprint)
+        queue.finish(row, "done", "Labels: " + ",".join(applied)[:100] + "; haiku=" + haiku_status)
         return {"status": "done", "kind": kind, "labels": applied,
-                "duplicate": duplicate, "closed": bool(duplicate and enable_closure)}
+                "haiku": haiku_status, "duplicate": duplicate,
+                "closed": bool(duplicate and enable_closure)}
     except Exception as exc:
         # No secret, payload body, source code or token is logged.
         queue.finish(row, "failed", type(exc).__name__)
