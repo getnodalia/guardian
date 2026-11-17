@@ -64,6 +64,20 @@ def build_parser() -> argparse.ArgumentParser:
     labels.add_argument("--installation-id", type=int, required=True)
     labels.add_argument("--confirm-write", action="store_true")
 
+    fixes = sub.add_parser("fix-worker", help="process one authorized Sonnet code operation")
+    fixes.add_argument("--db", type=Path, default=default_db().with_name("deliveries.sqlite3"))
+    fixes.add_argument("--enable-fixes", action="store_true")
+    fixes.add_argument("--enable-conflicts", action="store_true")
+    fixes.add_argument("--confirm-paid", action="store_true")
+    fixes.add_argument("--confirm-write", action="store_true")
+    fixes.add_argument("--monthly-budget", type=float, default=20.0)
+
+    buttons = sub.add_parser("setup-buttons", help="add native GitHub Checks action buttons to one PR")
+    buttons.add_argument("--repo", required=True)
+    buttons.add_argument("--pr", type=int, required=True)
+    buttons.add_argument("--installation-id", type=int, required=True)
+    buttons.add_argument("--confirm-write", action="store_true")
+
     budget = sub.add_parser("budget", help="show local usage/reservation ledger")
     budget.add_argument("--monthly-budget", type=float, default=20.0)
     budget.add_argument("--ledger", type=Path, default=default_db())
@@ -145,6 +159,56 @@ def main(argv: list[str] | None = None) -> int:
                     api.create_label(args.repo, name, color, description)
                     added.append(name)
             print(json.dumps({"added": added}, ensure_ascii=False))
+            return 0
+        if args.command == "fix-worker":
+            if not (args.confirm_write and args.confirm_paid):
+                raise ValueError("fix-worker requires --confirm-write and --confirm-paid")
+            if not (0 < args.monthly_budget <= 100):
+                raise ValueError("Invalid fix-worker budget")
+            if not (os.environ.get("GITHUB_APP_ID") and
+                    os.environ.get("GITHUB_APP_PRIVATE_KEY_PATH") and
+                    os.environ.get("ANTHROPIC_API_KEY")):
+                raise ValueError("Fix worker credentials are incomplete")
+            from .operations import OperationQueue, process_operation
+            from .webhooks import DeliveryQueue
+            result = process_operation(
+                OperationQueue(DeliveryQueue(args.db)),
+                enable_fixes=args.enable_fixes,
+                enable_conflicts=args.enable_conflicts,
+                monthly_budget=args.monthly_budget,
+            )
+            print(json.dumps(result or {"status": "empty"}, ensure_ascii=False))
+            return 2 if result and result.get("status") == "failed" else 0
+        if args.command == "setup-buttons":
+            if not args.confirm_write or os.environ.get("GUARDIAN_ENABLE_CHECK_ACTIONS") != "1":
+                raise ValueError("Check buttons require --confirm-write and GUARDIAN_ENABLE_CHECK_ACTIONS=1")
+            from .app_auth import installation_access_token
+            from .maintenance_api import MaintenanceAPI
+            token = installation_access_token(
+                int(os.environ["GITHUB_APP_ID"]),
+                os.environ["GITHUB_APP_PRIVATE_KEY_PATH"],
+                args.installation_id,
+            )
+            api = MaintenanceAPI(token)
+            pr = api.get_pr(args.repo, args.pr)
+            if pr.get("state") != "open" or pr.get("draft"):
+                raise ValueError("Check buttons require an open non-draft PR")
+            head_sha = (pr.get("head") or {}).get("sha")
+            result = api.create_check(
+                args.repo, head_sha,
+                title="Guardian · Suggested actions",
+                summary="Buttons request an authorization-checked maintenance operation. "
+                        "They never merge a PR automatically.",
+                actions=[
+                    {"label": "Propose fix",
+                     "description": "Open a draft PR with a Sonnet-generated correction",
+                     "identifier": "guardian_fix"},
+                    {"label": "Resolve conflicts",
+                     "description": "Prepare a reviewable, isolated merge proposal",
+                     "identifier": "guardian_resolve_conflicts"},
+                ],
+            )
+            print(json.dumps({"check_run_id": result.get("id")}))
             return 0
         if args.command == "review":
             from .bot import review_pr
