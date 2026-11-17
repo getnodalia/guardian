@@ -3,7 +3,7 @@
 import json
 import unittest
 
-from nodalia_guardian.decisions import InvalidReview, gate, parse_review
+from nodalia_guardian.decisions import InvalidReview, REVIEW_SCHEMA, gate, parse_review
 
 
 class DecisionsTests(unittest.TestCase):
@@ -58,6 +58,27 @@ class DecisionsTests(unittest.TestCase):
         response = json.dumps({"verdict": "request_changes", "summary": "Bug", "findings":
                                [{"severity": "high", "path": "secrets.env", "message": "Problem"}]})
         with self.assertRaises(InvalidReview):
+            parse_review(response, {"src/main.rs"})
+
+    def test_review_schema_enumerates_severities(self):
+        severity = REVIEW_SCHEMA["properties"]["findings"]["items"]["properties"]["severity"]
+        self.assertEqual(set(severity["enum"]),
+                         {"critical", "high", "medium", "low", "info"})
+
+    def test_review_parses_enum_capitalization_without_downgrading(self):
+        response = json.dumps({"verdict": "request_changes", "summary": "Real bug",
+                               "findings": [{"severity": "HIGH", "path": "src/main.rs",
+                                             "message": "A reproducible regression"}]})
+        parsed = parse_review(response, {"src/main.rs"})
+        self.assertEqual(parsed["findings"][0]["severity"], "high")
+        event, _ = gate(self.summary, parsed, ["CI / test"])
+        self.assertEqual(event, "REQUEST_CHANGES")
+
+    def test_unknown_severity_still_rejected(self):
+        response = json.dumps({"verdict": "approve", "summary": "Bug",
+                               "findings": [{"severity": "warning", "path": "src/main.rs",
+                                             "message": "Problem"}]})
+        with self.assertRaisesRegex(InvalidReview, "severity invalid"):
             parse_review(response, {"src/main.rs"})
 
     def test_model_cannot_force_approval_on_open_findings(self):
