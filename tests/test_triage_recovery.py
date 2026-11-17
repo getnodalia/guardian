@@ -79,7 +79,7 @@ class RecoveryTests(unittest.TestCase):
         ) as model:
             first = self.submit("delivery-1")
             second = self.submit("delivery-2", "edited")
-        self.assertEqual(first["status"], "done")
+        self.assertEqual(first["status"], "done", first)
         self.assertEqual(first["labels"], ["needs-triage"])
         self.assertEqual(first["haiku"], "model_unavailable")
         self.assertEqual(second["status"], "skipped")
@@ -107,7 +107,7 @@ class RecoveryTests(unittest.TestCase):
             _fingerprint(REPO, 42, "issue", self.api.issue.return_value),
         )
         second = self.submit("delivery-2", "edited")
-        self.assertEqual(second["status"], "done")
+        self.assertEqual(second["status"], "done", second)
         self.assertEqual(second["labels"], ["type:bug"])
         self.api.add_labels.assert_called_once_with(
             REPO, 42, ["type:bug"]
@@ -127,8 +127,8 @@ class RecoveryTests(unittest.TestCase):
         ]
         first = self.submit("delivery-1", "opened", "pull_request")
         second = self.submit("delivery-2", "synchronize", "pull_request")
-        self.assertEqual(first["status"], "done")
-        self.assertEqual(second["status"], "done")
+        self.assertEqual(first["status"], "done", first)
+        self.assertEqual(second["status"], "done", second)
         self.assertEqual(self.api.add_labels.call_count, 2)
         self.assertEqual(first["haiku"], "not_needed")
 
