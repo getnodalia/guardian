@@ -6,6 +6,7 @@ limit in Claude Console, especially before automating GitHub Actions.
 
 import datetime as dt
 import sqlite3
+from decimal import Decimal, ROUND_CEILING
 from contextlib import contextmanager, closing
 from pathlib import Path
 
@@ -13,6 +14,8 @@ from pathlib import Path
 # Models with variable pricing are intentionally excluded until supported.
 MODEL_PRICES = {
     "claude-sonnet-5-5": (2, 10),
+    # Haiku 5.5 small prompts (<100K tokens); never use with long-context tier.
+    "claude-haiku-5-5": ("0.10", "0.50"),
     "claude-opus-5-5": (4, 20),
 }
 
@@ -23,7 +26,11 @@ def price_micro_usd(model: str, input_tokens: int, output_tokens: int) -> int:
     if input_tokens < 0 or output_tokens < 0:
         raise ValueError("Token counts cannot be negative")
     input_per_million, output_per_million = MODEL_PRICES[model]
-    return input_tokens * input_per_million + output_tokens * output_per_million
+    # Micro-dollar accounting: Haiku's fractional microdollars per token
+    # must be rounded *up* to avoid an undercount when making many calls.
+    amount = (Decimal(input_tokens) * Decimal(str(input_per_million))
+              + Decimal(output_tokens) * Decimal(str(output_per_million)))
+    return int(amount.to_integral_value(rounding=ROUND_CEILING))
 
 
 def default_db() -> Path:
