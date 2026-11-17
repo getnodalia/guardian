@@ -5,6 +5,7 @@ import re
 
 from .anthropic_api import analyze
 from .budget import BudgetLedger, default_db
+from .credential_guard import has_credential_markers
 from .git_changes import GitChangesAPI, safe_source_path
 from .github_api import GitHubError
 
@@ -94,6 +95,8 @@ def propose_fix(api: GitChangesAPI, repo: str, number: int, sha: str,
     comment = _find_guardian_comment(api, repo, number, sha, comment_id)
     path = comment["path"]
     source, blob = api.read_text(repo, path, sha)
+    if has_credential_markers(source) or has_credential_markers(comment["body"]):
+        raise ValueError("Possible credentials in source or review; refusing API transmission")
     payload = {"path": path, "source": source[:29_000],
                "review": comment["body"][:2000],
                "comment_id": comment.get("id")}
@@ -117,7 +120,7 @@ def propose_fix(api: GitChangesAPI, repo: str, number: int, sha: str,
         repo, branch, target_base,
         f"fix(guardian): propose correction for #{number}",
         f"### Nodalia Guardian · Proposed fix\n\n"
-        f"Targets #{number} at immutable commit \`{sha}\`.\n\n"
+        f"Targets #{number} at immutable commit `{sha}`.\n\n"
         f"**Finding:** review comment {comment.get('id')}\n\n"
         f"**Rationale:** {explanation}\n\n"
         "This is a draft PR. No code was executed by Guardian. "
