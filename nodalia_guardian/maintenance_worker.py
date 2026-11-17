@@ -165,16 +165,19 @@ def _command(api: MaintenanceAPI, queue: MaintenanceQueue, row, issue: dict,
             db.execute("""CREATE TABLE IF NOT EXISTS guardian_operations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 repo TEXT NOT NULL, pr INTEGER NOT NULL, installation INTEGER NOT NULL,
-                requester_id INTEGER NOT NULL, kind TEXT NOT NULL, sha TEXT NOT NULL,
+                requester_id INTEGER NOT NULL, requester TEXT NOT NULL,
+                target_comment_id INTEGER, kind TEXT NOT NULL, sha TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'queued',
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(repo,pr,sha,kind)
             )""")
             count = db.execute(
                 """INSERT OR IGNORE INTO guardian_operations
-                   (repo,pr,installation,requester_id,kind,sha)
-                   VALUES (?,?,?,?,?,?)""",
-                (repo, number, installation, sender_id, cmd, sha)
+                   (repo,pr,installation,requester_id,requester,target_comment_id,kind,sha)
+                   VALUES (?,?,?,?,?,?,?,?)""",
+                (repo, number, installation, sender_id, sender,
+                 int(args.lstrip("#")) if cmd == "fix" and args else None,
+                 cmd, sha)
             ).rowcount
         if count:
             api.comment(repo, number,
