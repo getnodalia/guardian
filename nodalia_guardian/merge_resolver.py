@@ -12,6 +12,7 @@ from urllib.parse import quote
 
 from .anthropic_api import analyze
 from .budget import BudgetLedger, default_db
+from .credential_guard import has_credential_markers
 from .git_changes import GitChangesAPI, safe_source_path
 from .github_api import GitHubError
 
@@ -161,6 +162,8 @@ def propose_merge_resolution(api: GitChangesAPI, repo: str, number: int,
             "head": _read_blob(api, repo, head_files[path]["sha"]),
             "base": _read_blob(api, repo, base_files[path]["sha"]),
         }
+        if any(has_credential_markers(value) for value in versions.values()):
+            raise ValueError("Potential secret in conflict source; refusing API transmission")
         answer, _ = analyze(
             versions, key, "claude-sonnet-5-5", 4096,
             BudgetLedger(default_db(), monthly_budget),
