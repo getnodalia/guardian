@@ -1,0 +1,6 @@
+# Optional: Guardian's existing review worker reads the maintenance feature flag.
+# Install as /etc/systemd/system/guardian-worker.service.d/maintenance.conf
+# after adding /etc/guardian/maintenance.env. Keep GUARDIAN_ENABLE_CHECK_ACTIONS=0
+# until Checks:write is explicitly approved.
+[Service]
+EnvironmentFile=/etc/guardian/maintenance.env
