@@ -21,12 +21,17 @@ class AnthropicAPIError(RuntimeError):
     pass
 
 
-def analyze(summary: dict, api_key: str, model: str, max_output_tokens: int, ledger: BudgetLedger, *, system: str = SYSTEM) -> tuple[str, float]:
+def analyze(summary: dict, api_key: str, model: str, max_output_tokens: int, ledger: BudgetLedger, *, system: str = SYSTEM, output_schema: dict | None = None) -> tuple[str, float]:
     if not api_key:
         raise ValueError("ANTHROPIC_API_KEY is required with --ai")
     # No diff, secrets, full logs, credentials, or private issue content is transmitted.
     payload = {"model": model, "max_tokens": max_output_tokens, "system": system,
                "messages": [{"role": "user", "content": json.dumps(summary, ensure_ascii=False, separators=(",", ":"))}]}
+    if output_schema is not None:
+        # API-level constrained decoding, not a mere JSON instruction.
+        payload["output_config"] = {
+            "format": {"type": "json_schema", "schema": output_schema}
+        }
     # Sonnet 5.5 thinks adaptively by default. With a short JSON review budget,
     # that can consume all output tokens before any text is produced.
     # This no-tools reviewer does not need up-front thinking.
