@@ -6,7 +6,7 @@ import os
 from .anthropic_api import analyze
 from .app_auth import installation_access_token
 from .budget import BudgetLedger, default_db
-from .decisions import REVIEW_SYSTEM, gate, parse_review, review_markdown
+from .decisions import REVIEW_SCHEMA, REVIEW_SYSTEM, gate, parse_review, review_markdown
 from .github_api import GitHubAPI, GitHubError, validate_repo
 from .review import summarize
 
@@ -56,7 +56,7 @@ def review_pr(repo: str, pr: int, *, ai: bool, publish: bool,
         material = {**summary, "patches": patches}
         llm, cost = analyze(material, os.environ.get("ANTHROPIC_API_KEY", ""),
                             "claude-sonnet-5-5", 3000, BudgetLedger(ledger_path or default_db(), monthly_budget),
-                            system=REVIEW_SYSTEM)
+                            system=REVIEW_SYSTEM, output_schema=REVIEW_SCHEMA)
         review = parse_review(llm, {f["name"] for f in summary["files"]})
         own = "guardian" in str(raw["pr"].get("head", {}).get("label", "")).lower()
         event, reasons = gate(summary, review, required_checks, auto_approve, own)
