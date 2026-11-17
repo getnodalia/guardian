@@ -19,10 +19,10 @@ def parse_command(body: object) -> tuple[str, str] | None:
     if not match:
         return None
     command, args = (match.group(1) or "help").lower(), (match.group(2) or "").strip()
-    if command not in {"help", "status", "review", "fix",
+    if command not in {"help", "status", "review", "fix", "fix-all",
                        "resolve-conflicts", "duplicate", "label"}:
         return None
-    if command in {"help", "status", "review", "resolve-conflicts"} and args:
+    if command in {"help", "status", "review", "fix-all", "resolve-conflicts"} and args:
         return None
     if command == "fix" and args and not re.fullmatch(r"#?[0-9]{1,10}", args):
         return None
@@ -93,13 +93,15 @@ def parse_maintenance(body: bytes, event: str, allowed_repos: set[str]) -> dict 
                 or type(app.get("id")) is not int):
             return None
         identifier = requested.get("identifier")
-        if identifier not in {"guardian_fix", "guardian_resolve_conflicts"}:
+        if identifier not in {"guardian_fix", "guardian_fix_all", "guardian_resolve_conflicts"}:
             return None
         prs = check_run.get("pull_requests") or []
         if not isinstance(prs, list) or len(prs) != 1:
             return None
         obj, kind = prs[0], "check_action"
-        command = ("fix", "") if identifier == "guardian_fix" else ("resolve-conflicts", "")
+        commands = {"guardian_fix": "fix", "guardian_fix_all": "fix-all",
+                    "guardian_resolve_conflicts": "resolve-conflicts"}
+        command = (commands[identifier], "")
         comment_id = check_run.get("id")
         # The live GitHub App ID must match before accepting a button.
         import os

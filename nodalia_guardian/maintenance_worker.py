@@ -152,7 +152,7 @@ def _command(api: MaintenanceAPI, queue: MaintenanceQueue, row, issue: dict,
                     "**Nodalia Guardian** · Commands: /guardian status, "
                     "/guardian review, /guardian label <existing-label>, "
                     "/guardian duplicate #123, /guardian fix, "
-                    "/guardian resolve-conflicts. "
+                    "/guardian fix-all, /guardian resolve-conflicts. "
                     "Sensitive operations require a configured maintainer.")
         return "Help sent"
     if cmd == "status":
@@ -205,7 +205,7 @@ def _command(api: MaintenanceAPI, queue: MaintenanceQueue, row, issue: dict,
         label_item(api, repo, number, {"duplicate"})
         (api.close_pr if is_pr else api.close_issue)(repo, number)
         return "Duplicate closed"
-    if cmd in {"fix", "resolve-conflicts"}:
+    if cmd in {"fix", "fix-all", "resolve-conflicts"}:
         if not is_pr or not privileged(api, repo, sender, sender_id, require_admin=True):
             return "PR and privileged maintainer required"
         if issue.get("state") != "open":

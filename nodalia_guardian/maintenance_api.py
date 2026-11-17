@@ -130,7 +130,8 @@ class MaintenanceAPI(GitHubAPI):
             not isinstance(a, dict) or
             not all(isinstance(a.get(k), str) and a[k] for k in
                     ("label", "description", "identifier")) or
-            a["identifier"] not in {"guardian_fix", "guardian_resolve_conflicts"}
+            a["identifier"] not in {"guardian_fix", "guardian_fix_all",
+                                    "guardian_resolve_conflicts"}
             for a in actions
         ):
             raise ValueError("invalid check-run requested actions")

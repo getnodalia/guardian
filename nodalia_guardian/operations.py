@@ -9,6 +9,7 @@ import os
 
 from .app_auth import installation_access_token
 from .fixer import propose_fix
+from .fix_all import propose_fix_all
 from .git_changes import GitChangesAPI
 from .maintenance_worker import allowed_ids, privileged
 from .merge_resolver import propose_merge_resolution
@@ -69,9 +70,9 @@ def process_operation(queue: OperationQueue, *, enable_fixes: bool,
         return None
     _, repo, number, installation, sender_id, login, target_comment, kind, sha = row
     try:
-        if kind not in {"fix", "resolve-conflicts"}:
+        if kind not in {"fix", "fix-all", "resolve-conflicts"}:
             raise ValueError("Unknown privileged operation")
-        if not ((kind == "fix" and enable_fixes)
+        if not ((kind in {"fix", "fix-all"} and enable_fixes)
                 or (kind == "resolve-conflicts" and enable_conflicts)):
             queue.finish(row, "skipped", "Operation capability disabled")
             return {"status": "skipped", "reason": "Capability disabled"}
@@ -97,6 +98,11 @@ def process_operation(queue: OperationQueue, *, enable_fixes: bool,
         if kind == "fix":
             result = propose_fix(
                 api, repo, number, sha, comment_id=target_comment, key=key,
+                monthly_budget=monthly_budget,
+            )
+        elif kind == "fix-all":
+            result = propose_fix_all(
+                api, repo, number, sha, key=key,
                 monthly_budget=monthly_budget,
             )
         else:
