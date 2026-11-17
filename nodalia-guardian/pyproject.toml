@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=75,<85"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nodalia-guardian"
+version = "0.2.0"
+description = "GitHub App engineering reviewer for Nodalia"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT OR Apache-2.0"}
+authors = [{name = "Nodalia"}]
+dependencies = []
+
+[project.optional-dependencies]
+app = ["cryptography>=44,<48"]
+
+[project.scripts]
+nodalia-guardian = "nodalia_guardian.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["nodalia_guardian*"]
