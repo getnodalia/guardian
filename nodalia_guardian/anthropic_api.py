@@ -21,7 +21,7 @@ class AnthropicAPIError(RuntimeError):
     pass
 
 
-def analyze(summary: dict, api_key: str, model: str, max_output_tokens: int, ledger: BudgetLedger, *, system: str = SYSTEM, output_schema: dict | None = None) -> tuple[str, float]:
+def analyze(summary: dict, api_key: str, model: str, max_output_tokens: int, ledger: BudgetLedger, *, system: str = SYSTEM, output_schema: dict | None = None, thinking_mode: str | None = None) -> tuple[str, float]:
     if not api_key:
         raise ValueError("ANTHROPIC_API_KEY is required with --ai")
     # No diff, secrets, full logs, credentials, or private issue content is transmitted.
@@ -32,11 +32,21 @@ def analyze(summary: dict, api_key: str, model: str, max_output_tokens: int, led
         payload["output_config"] = {
             "format": {"type": "json_schema", "schema": output_schema}
         }
-    # Sonnet 5.5 thinks adaptively by default. With a short JSON review budget,
-    # that can consume all output tokens before any text is produced.
-    # This no-tools reviewer does not need up-front thinking.
-    if model == "claude-sonnet-5-5":
-        payload["thinking"] = {"type": "between_tools"}
+    # Spend the least possible thinking tokens for Haiku classification.
+    # Sonnet reviews need concise JSON; explicitly authorized code generation
+    # can instead opt into medium-effort adaptive reasoning.
+    if model == "claude-haiku-5-5":
+        if thinking_mode not in (None, "disabled"):
+            raise ValueError("Unsupported Haiku thinking setting")
+        payload["thinking"] = {"type": "disabled"}
+    elif model == "claude-sonnet-5-5":
+        if thinking_mode not in (None, "between_tools", "adaptive"):
+            raise ValueError("Unsupported Sonnet thinking setting")
+        payload["thinking"] = {"type": thinking_mode or "between_tools"}
+        if thinking_mode == "adaptive":
+            payload.setdefault("output_config", {})["effort"] = "medium"
+    elif thinking_mode is not None:
+        raise ValueError("Thinking mode unsupported for this model")
     serialized = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     reservation_id, _ = ledger.reserve(model, len(serialized), max_output_tokens)
     request = urllib.request.Request(
