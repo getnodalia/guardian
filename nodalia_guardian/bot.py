@@ -55,7 +55,7 @@ def review_pr(repo: str, pr: int, *, ai: bool, publish: bool,
             summary["patches_available"] = False
         material = {**summary, "patches": patches}
         llm, cost = analyze(material, os.environ.get("ANTHROPIC_API_KEY", ""),
-                            "claude-sonnet-5-5", 1400, BudgetLedger(ledger_path or default_db(), monthly_budget),
+                            "claude-sonnet-5-5", 3000, BudgetLedger(ledger_path or default_db(), monthly_budget),
                             system=REVIEW_SYSTEM)
         review = parse_review(llm, {f["name"] for f in summary["files"]})
         own = "guardian" in str(raw["pr"].get("head", {}).get("label", "")).lower()
