@@ -89,10 +89,30 @@ class TriageTests(unittest.TestCase):
         self.assertIn("type:bug", result)
         self.assertIn("area:security", result)
 
-    def test_haiku_schema_is_bounded(self):
+    def test_haiku_schema_is_compatible_with_api_structured_outputs(self):
         props = HAIKU_SCHEMA["properties"]
-        self.assertEqual(props["confidence"]["maximum"], 1)
+        # Numerical JSON Schema constraints generate HTTP 400 with Claude API.
+        self.assertEqual(props["confidence"]["type"], "number")
+        self.assertNotIn("minimum", props["confidence"])
+        self.assertNotIn("maximum", props["confidence"])
         self.assertIn("unknown", props["category"]["enum"])
+        self.assertFalse(HAIKU_SCHEMA["additionalProperties"])
+
+    def test_haiku_validates_confidence_locally_after_api_response(self):
+        class Ledger:
+            pass
+        for confidence in (-0.1, 1.1, True):
+            with self.subTest(confidence=confidence):
+                response = json.dumps({
+                    "category": "bug", "area": "security",
+                    "priority": "high", "confidence": confidence,
+                })
+                with patch("nodalia_guardian.triage.analyze",
+                           return_value=(response, 0.00001)):
+                    with patch("nodalia_guardian.triage.BudgetLedger",
+                               return_value=Ledger()):
+                        with self.assertRaises(ValueError):
+                            classify_haiku("A title", "Description", key="test")
 
     def test_exact_issue_duplicate_requires_substantive_body(self):
         old = {"number": 3, "title": "Can't authorize requests",
