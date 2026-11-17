@@ -69,7 +69,7 @@ def parse_maintenance(body: bytes, event: str, allowed_repos: set[str]) -> dict 
     if event == "issues" and action in {"opened", "reopened", "edited"}:
         obj, kind = data.get("issue"), "issue"
     elif event == "pull_request" and action in {
-        "opened", "reopened", "edited", "ready_for_review"
+        "opened", "reopened", "edited", "ready_for_review", "synchronize"
     }:
         obj, kind = data.get("pull_request"), "pull_request"
     elif event == "issue_comment" and action == "created":
