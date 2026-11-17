@@ -248,7 +248,7 @@ def process_maintenance(queue: MaintenanceQueue, *, enable_triage: bool,
         # never sent to Anthropic without a separate explicit policy.
         if enable_haiku and not any(label.startswith("type:") for label in labels):
             metadata = api._get(api._path(repo))
-            if metadata.get("private"):
+            if metadata.get("private") is not False:
                 labels.add("needs-triage")
             else:
                 haiku_labels, _ = classify_haiku(
