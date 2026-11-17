@@ -20,6 +20,35 @@ _PASS = {"success", "neutral"}
 _FAIL = {"failure", "timed_out", "cancelled", "action_required", "startup_failure"}
 
 
+# Constrained Claude JSON output. Preserve server-side validation below.
+REVIEW_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "verdict": {"type": "string", "enum": ["approve", "request_changes", "comment"]},
+        "summary": {"type": "string", "description": "Concise engineering assessment, at most 3000 characters."},
+        "findings": {
+            "type": "array",
+            "description": "At most 20 actionable findings grounded in changed code.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "severity": {"type": "string",
+                                 "enum": ["critical", "high", "medium", "low", "info"]},
+                    "path": {"type": ["string", "null"],
+                             "description": "Exact changed filename, or null if uncertain."},
+                    "message": {"type": "string",
+                                "description": "Specific evidence and action; at most 1200 characters."},
+                },
+                "required": ["severity", "path", "message"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["verdict", "summary", "findings"],
+    "additionalProperties": False,
+}
+
+
 class InvalidReview(ValueError):
     pass
 
@@ -39,7 +68,15 @@ def parse_review(text: str, paths: set[str]) -> dict:
         raise InvalidReview("Invalid findings")
     cleaned = []
     for finding in findings:
-        if not isinstance(finding, dict) or finding.get("severity") not in _ALLOWED_SEVERITIES:
+        if not isinstance(finding, dict):
+            raise InvalidReview("Finding severity invalid")
+        severity = finding.get("severity")
+        # JSON-schema enums may occasionally vary in capitalization. Do not
+        # downgrade or guess unknown severities: fail closed.
+        if not isinstance(severity, str):
+            raise InvalidReview("Finding severity invalid")
+        severity = severity.strip().lower()
+        if severity not in _ALLOWED_SEVERITIES:
             raise InvalidReview("Finding severity invalid")
         path = finding.get("path")
         if path is not None and (not isinstance(path, str) or path not in paths):
@@ -47,7 +84,7 @@ def parse_review(text: str, paths: set[str]) -> dict:
         message = finding.get("message")
         if not isinstance(message, str) or not 1 <= len(message) <= 1200:
             raise InvalidReview("Finding message missing or too long")
-        cleaned.append({"severity": finding["severity"], "path": path,
+        cleaned.append({"severity": severity, "path": path,
                         "message": limit_text(message, 1200)})
     return {"verdict": result["verdict"], "summary": limit_text(result["summary"], 3000),
             "findings": cleaned}
