@@ -36,15 +36,6 @@ class ClaudeResponseTests(unittest.TestCase):
             },
         }).encode("utf-8")
 
-    def invoke(self, model, response):
-        ledger = FakeLedger()
-        with patch("nodalia_guardian.anthropic_api.urllib.request.urlopen",
-                   return_value=io.BytesIO(response)) as request:
-            def call():
-                return analyze({"repository": "getnodalia/agora"}, "test-key",
-                               model, 3000, ledger)
-            return call, request, ledger
-
     def test_sonnet_uses_between_tools_and_extracts_text(self):
         ledger = FakeLedger()
         with patch("nodalia_guardian.anthropic_api.urllib.request.urlopen",
