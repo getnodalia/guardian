@@ -13,6 +13,7 @@ from .credential_guard import has_credential_markers
 from .fixer import _validate_proposed_patch
 from .git_changes import GitChangesAPI, safe_source_path
 from .github_api import GitHubError
+from .redaction import limit_text
 
 _SOURCES = {
     "nodalia-guardian[bot]": "Guardian",
@@ -91,12 +92,13 @@ def _current_review_findings(api: GitChangesAPI, repo: str, number: int,
                 or type(c.get("line")) is not int
                 or c["line"] < 1
                 or not isinstance(c.get("body"), str)
-                or not c["body"].strip()):
+                or not c["body"].strip()
+                or has_credential_markers(c["body"])):
             continue
         findings.append({
             "source": source, "path": c["path"], "line": c["line"],
             "comment_id": c.get("id") if type(c.get("id")) is int else None,
-            "message": c["body"][:650],
+            "message": limit_text(c["body"], 650),
         })
     # Aggregate at most two findings per path to limit prompt injection budget.
     grouped = {}
