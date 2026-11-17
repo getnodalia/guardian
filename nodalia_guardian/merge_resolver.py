@@ -124,6 +124,8 @@ def propose_merge_resolution(api: GitChangesAPI, repo: str, number: int,
                              monthly_budget: float = 20) -> dict:
     pr = api.get_pr(repo, number)
     head, base = pr.get("head") or {}, pr.get("base") or {}
+    if (base.get("repo") or {}).get("private"):
+        raise ValueError("Refusing to send private repository source to Sonnet")
     head_sha, base_sha = head.get("sha"), base.get("sha")
     if (pr.get("state") != "open" or pr.get("draft")
             or head_sha != expected_sha or not isinstance(base_sha, str)
