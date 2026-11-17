@@ -1,6 +1,7 @@
 """Offline regressions: triage must not lose labels when Haiku/API fails."""
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -62,6 +63,13 @@ class RecoveryTests(unittest.TestCase):
         self.client.start()
         self.addCleanup(self.auth.stop)
         self.addCleanup(self.client.stop)
+        self.env = patch.dict(os.environ, {
+            "GITHUB_APP_ID": "5794704",
+            "GITHUB_APP_PRIVATE_KEY_PATH": "/unused/in/offline/tests.pem",
+            "ANTHROPIC_API_KEY": "offline-only",
+        })
+        self.env.start()
+        self.addCleanup(self.env.stop)
 
     def submit(self, delivery, action="opened", kind="issues"):
         self.assertEqual(
