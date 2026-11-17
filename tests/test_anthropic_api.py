@@ -49,6 +49,17 @@ class ClaudeResponseTests(unittest.TestCase):
         self.assertEqual(cost, 0.002)
         self.assertEqual(ledger.settlements, [(17, "claude-sonnet-5-5", 120, 30)])
 
+    def test_review_schema_is_sent_in_output_config(self):
+        from nodalia_guardian.decisions import REVIEW_SCHEMA
+        ledger = FakeLedger()
+        with patch("nodalia_guardian.anthropic_api.urllib.request.urlopen",
+                   return_value=io.BytesIO(self.message())) as urlopen:
+            analyze({}, "test-key", "claude-sonnet-5-5", 3000, ledger,
+                    output_schema=REVIEW_SCHEMA)
+            body = json.loads(urlopen.call_args.args[0].data)
+        self.assertEqual(body["output_config"]["format"]["type"], "json_schema")
+        self.assertEqual(body["output_config"]["format"]["schema"], REVIEW_SCHEMA)
+
     def test_opus_does_not_use_sonnet_only_thinking_mode(self):
         ledger = FakeLedger()
         with patch("nodalia_guardian.anthropic_api.urllib.request.urlopen",
