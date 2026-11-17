@@ -84,7 +84,7 @@ class FixTests(unittest.TestCase):
         api.create_bot_branch.assert_called_once()
         api.write_bot_file.assert_called_once()
         self.assertIn("good();", api.write_bot_file.call_args.args[-1])
-        self.assertEqual(api.propose_bot_pr.call_args.args[3], "feat/new")
+        self.assertEqual(api.propose_bot_pr.call_args.args[2], "feat/new")
 
     def test_fix_refuses_stale_head_before_token_usage(self):
         api = MagicMock(spec=GitChangesAPI)
@@ -195,7 +195,7 @@ class MergeTests(unittest.TestCase):
         self.assertEqual(result["conflict_files"], 0)
         self.assertEqual(result["base_paths"], 1)
         self.assertEqual(api.create_bot_branch.call_args.args[-1], "8" * 40)
-        self.assertEqual(api.propose_bot_pr.call_args.args[3], "feat/new")
+        self.assertEqual(api.propose_bot_pr.call_args.args[2], "feat/new")
 
 
 class CheckActionTests(unittest.TestCase):
