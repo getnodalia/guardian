@@ -38,8 +38,12 @@ REVIEW_SCHEMA = {
                              "description": "Exact changed filename, or null if uncertain."},
                     "message": {"type": "string",
                                 "description": "Specific evidence and action; at most 1200 characters."},
+                    "line": {"type": ["integer", "null"],
+                             "description": "Exact added-line number in the new file, or null if unknown."},
+                    "suggestion": {"type": ["string", "null"],
+                                   "description": "One-line replacement code for that line, or null."},
                 },
-                "required": ["severity", "path", "message"],
+                "required": ["severity", "path", "message", "line", "suggestion"],
                 "additionalProperties": False,
             },
         },
@@ -84,8 +88,19 @@ def parse_review(text: str, paths: set[str]) -> dict:
         message = finding.get("message")
         if not isinstance(message, str) or not 1 <= len(message) <= 1200:
             raise InvalidReview("Finding message missing or too long")
+        line = finding.get("line")
+        if line is not None and (type(line) is not int or line < 1 or line > 1_000_000):
+            raise InvalidReview("Finding line invalid")
+        suggestion = finding.get("suggestion")
+        if suggestion is not None and (not isinstance(suggestion, str)
+                                       or not 0 < len(suggestion) <= 400
+                                       or "\n" in suggestion or "\r" in suggestion
+                                       or "```" in suggestion):
+            # A malformed suggestion must never become a suggestion block.
+            suggestion = None
         cleaned.append({"severity": severity, "path": path,
-                        "message": limit_text(message, 1200)})
+                        "message": limit_text(message, 1200),
+                        "line": line, "suggestion": suggestion})
     return {"verdict": result["verdict"], "summary": limit_text(result["summary"], 3000),
             "findings": cleaned}
 
@@ -134,22 +149,56 @@ def gate(summary: dict, model_review: dict, required_checks: list[str],
     return "COMMENT", reasons
 
 
-def review_markdown(summary: dict, model_review: dict, reasons: list[str], event: str) -> str:
-    lines = ["### Nodalia Guardian · Engineering review", "",
-             f"**Decision:** `{event}` · **Analyzed commit:** `{summary['head_sha']}`", "",
-             model_review["summary"], ""]
-    if model_review["findings"]:
-        lines += ["**Findings**", ""]
-        for finding in model_review["findings"]:
-            location = f" (`{finding['path']}`)" if finding["path"] else ""
-            lines.append(f"- **{finding['severity'].upper()}**{location}: {finding['message']}")
+def review_markdown(summary: dict, model_review: dict, reasons: list[str], event: str,
+                    placed_indices: set[int] | None = None) -> str:
+    """Concise GitHub review summary; each placed finding lives in its own thread."""
+    placed_indices = placed_indices or set()
+    checks = summary.get("checks", [])
+    count = len(model_review["findings"])
+    inline_count = len(placed_indices)
+    decision = {"COMMENT": "Comment", "APPROVE": "Approve",
+                "REQUEST_CHANGES": "Request changes"}.get(event, "Comment")
+    ci = (f"{summary.get('failed_count', 0)} failing · "
+          f"{summary.get('pending_count', 0)} pending · "
+          f"{len(checks)} observed")
+    lines = [
+        "## Nodalia Guardian · Code review",
+        "",
+        f"**{decision}** · Commit `{summary['head_sha'][:12]}`",
+        "",
+        "| CI snapshot | Findings | On-code discussions |",
+        "| :-- | --: | --: |",
+        f"| {ci} | {count} | {inline_count} |",
+        "",
+        "### Assessment",
+        "",
+        model_review["summary"],
+        "",
+    ]
+    if inline_count:
+        lines += [f"**{inline_count} finding(s) attached directly to the relevant diff lines.**",
+                  "Review the individual threads below before merging.", ""]
+    missing = [(i, f) for i, f in enumerate(model_review["findings"])
+               if i not in placed_indices]
+    if missing:
+        lines += ["### Additional findings", "",
+                  "These findings could not be anchored to a verified changed line.", ""]
+        for _, finding in missing:
+            path = finding["path"]
+            location = f" · `{path.replace(chr(96), '')}`" if path else ""
+            lines.append(f"- **{finding['severity'].upper()}**{location} — {finding['message']}")
         lines.append("")
+    lines += ["<details>", "<summary>Review gates and limitations</summary>", ""]
     if reasons:
-        lines += ["**Approval blockers / further verification**", ""]
-        lines += [f"- {reason}" for reason in reasons]
-    lines += ["", "_AI-assisted review, based on bounded GitHub PR patches and CI metadata. "
-             "Guardian did not run the repository's test suite itself. "
-             "A human reviewer remains responsible for critical changes._"]
+        lines.extend(f"- {reason}" for reason in reasons)
+    else:
+        lines.append("- All configured approval gates satisfied.")
+    lines += ["",
+              "- Guardian inspected bounded PR patches and reported CI metadata; "
+              "it did not execute tests or independently verify every dependency.",
+              "- A human must verify security-sensitive changes and suggested patches.",
+              "</details>", "",
+              "_Generated by Nodalia Guardian · Independent checks take precedence over AI recommendations._"]
     return "\n".join(lines)
 
 
@@ -162,7 +211,11 @@ Avoid speculative claims and generic nitpicks. Do not weaken tests or CI. If pat
 incomplete, explain the limitation and choose comment. No use of tools or external URLs.
 Respond with ONLY a JSON object (no Markdown) using this exact schema:
 {"verdict":"approve|request_changes|comment", "summary":"text", "findings":[
-{"severity":"critical|high|medium|low|info", "path":"exact changed filename or null", "message":"specific evidence and proposed action"}]}
+{"severity":"critical|high|medium|low|info", "path":"exact changed filename or null", "message":"specific evidence and proposed action", "line":"exact added line number of the NEW file or null", "suggestion":"single-line replacement code or null"}]}
+Only give a line when it is visible as an added (+) line in the patch for that path.
+Suggestions must be one line of code replacing that exact added line and preserve indentation.
+Avoid speculative suggestions, changes to access controls or security-sensitive code, and
+invented locations. Use null for unknown line or suggestion. The application verifies anchors.
 Approve only when the diff is complete and you find no meaningful issue; independent policy will
 also gate on CI and special files. If unsure, choose comment. Do not include secrets or credentials.
 """
