@@ -167,9 +167,10 @@ def propose_merge_resolution(api: GitChangesAPI, repo: str, number: int,
         if any(has_credential_markers(value) for value in versions.values()):
             raise ValueError("Potential secret in conflict source; refusing API transmission")
         answer, _ = analyze(
-            versions, key, "claude-sonnet-5-5", 4096,
+            versions, key, "claude-sonnet-5-5", 8192,
             BudgetLedger(default_db(), monthly_budget),
-            system=MERGE_SYSTEM, output_schema=MERGE_SCHEMA
+            system=MERGE_SYSTEM, output_schema=MERGE_SCHEMA,
+            thinking_mode="adaptive"
         )
         try:
             solution = json.loads(answer)
