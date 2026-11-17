@@ -7,7 +7,7 @@ that exact new-side line. Suggestions remain human-applied GitHub UI actions.
 
 import re
 
-_HUNK = re.compile(r"^@@ -\\d+(?:,\\d+)? \\+(\\d+)(?:,\\d+)? @@")
+_HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
 
 
 def added_lines(patch: str) -> dict[int, str]:
@@ -22,7 +22,7 @@ def added_lines(patch: str) -> dict[int, str]:
             line_number = int(match.group(1))
         elif line_number is None:
             continue
-        elif item.startswith("+") and not item.startswith("+++"):
+        elif item.startswith("+"):
             lines[line_number] = item[1:]
             line_number += 1
         elif item.startswith(" "):
@@ -61,14 +61,14 @@ def build_inline_comments(findings: list[dict], files: list[dict], *,
         if not isinstance(message, str) or not isinstance(severity, str):
             continue
         title = f"**{severity.upper()} · Nodalia Guardian**"
-        body = f"{title}\\n\\n{message}"
+        body = f"{title}\n\n{message}"
         suggestion = item.get("suggestion")
         if (isinstance(suggestion, str) and suggestion.strip()
                 and len(suggestion) <= 400
-                and "\\n" not in suggestion and "\\r" not in suggestion
+                and "\n" not in suggestion and "\r" not in suggestion
                 and "```" not in suggestion and suggestion != source):
-            body += ("\\n\\n**Proposed change** — review before applying:\\n\\n"
-                     f"```suggestion\\n{suggestion}\\n```")
+            body += ("\n\n**Proposed change** — review before applying:\n\n"
+                     f"```suggestion\n{suggestion}\n```")
         comments.append({"path": path, "line": line, "side": "RIGHT", "body": body})
         placed.add(index)
     return comments, placed
