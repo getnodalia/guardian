@@ -13,7 +13,7 @@ authors = [{name = "Nodalia"}]
 dependencies = []
 
 [project.optional-dependencies]
-app = ["cryptography>=44,<48"]
+app = ["cryptography>=50,<51"]
 
 [project.scripts]
 nodalia-guardian = "nodalia_guardian.cli:main"
