@@ -50,6 +50,20 @@ def _mark_once(queue: MaintenanceQueue, fingerprint: str) -> bool:
         ).rowcount == 1
 
 
+def _haiku_failure_reason(exc: Exception) -> str:
+    """Expose only a bounded status, never model responses or credentials."""
+    if isinstance(exc, BudgetExceeded):
+        return "budget_exceeded"
+    if isinstance(exc, AnthropicAPIError):
+        http_status = re.search(r"\\bHTTP ([45][0-9]{2})\\b", str(exc))
+        if http_status:
+            return "api_http_" + http_status.group(1)
+        if "max_tokens" in str(exc):
+            return "output_truncated"
+        return "model_unavailable"
+    return "invalid_model_output"
+
+
 def _triage_completed(queue: MaintenanceQueue, fingerprint: str) -> bool:
     """Only successful triage is deduplicated.
 
@@ -297,8 +311,7 @@ def process_maintenance(queue: MaintenanceQueue, *, enable_triage: bool,
                     )
                 except (AnthropicAPIError, BudgetExceeded, ValueError) as exc:
                     labels.add("needs-triage")
-                    haiku_status = ("budget_exceeded" if isinstance(exc, BudgetExceeded)
-                                    else "model_unavailable")
+                    haiku_status = _haiku_failure_reason(exc)
                 else:
                     labels |= haiku_labels
                     haiku_status = "classified"
